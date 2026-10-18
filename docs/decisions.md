@@ -82,3 +82,25 @@ ADR-style log. Newest entries at the bottom. Each entry: date, decision, why, al
   `response_format: json_schema` with an enum returned valid JSON that respected the enum on both.
 - **Why**: no second model id with `--chat-template-kwargs`, so no reload when switching thinking.
 - **Alternatives**: a second llama-swap entry per model with thinking disabled server side.
+
+## 2026-10-18 Tuned llama-server flags (step 0.5)
+
+- **Decision**: 9B stays at `-ngl 28`. MoE: `--n-cpu-moe 35 -b 2048 -ub 2048 --load-mode none`.
+- **Why**:
+  - `-b 2048 -ub 2048` doubled MoE prefill (230 to 480 tok/s on a cold 2k prompt) at about +150 MiB VRAM.
+  - `--n-cpu-moe 34` reached 5,527 MiB VRAM (about 50 MiB free) for about 20% more prefill and no decode
+    gain; 35 keeps about 500 MiB free. Each expert layer is about 500 MiB.
+  - `--load-mode none`: with the default mmap, "loading" read little of the file and the first prompt of
+    32 tokens or more paged in about 18 GB of experts (21 s for 16 output tokens), and llama-swap returned
+    502 EOF on the first requests after a load. Reading weights at load costs 35 s instead of 20 s and makes
+    the 17.8 GB visible as process RSS, so RAM accounting in step 0.7 is honest.
+  - 9B `-ngl 29` or 30 would leave under 200 MiB VRAM for about 1 tok/s; not worth the OOM risk.
+- **Open issue**: one 502 "proxy error: EOF" in 37 MoE requests even with `--load-mode none`; llama-server
+  logs show no error, and the `openai` SDK's retry hid it. Suspected keep-alive reuse between llama-swap and
+  llama-server. The step 0.8 client must keep a retry on 502 and connection errors; investigate if it recurs.
+- **Benchmark definitions**: cold = unique nonce at the start of the prompt (no reusable prefix); warm = the
+  same prompt again. Medians of 3 runs. The bench uses the `openai` SDK directly with `LLM_BASE_URL`; it moves
+  to `llmtrano.llm.client` when that exists (step 0.8).
+- **Alternatives**: mmap plus a warm-up request after each load (keeps graceful page eviction under RAM
+  pressure, but the first real request after a swap is slow or fails); `--load-mode mlock`.
+- **Dependency**: `openai>=3.35.1,<4` (released 2026-10-18, the same day; latest on PyPI).

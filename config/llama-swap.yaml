@@ -24,8 +24,13 @@ models:
       llama-server
       --host 127.0.0.1 --port ${PORT}
       --model /models/qwen3.6-35b-a3b/Qwen_Qwen3.6-35B-A3B-Q4_K_M.gguf
-      # attention on the GPU, experts of the first 36 of 40 layers in system RAM
-      -ngl 99 --n-cpu-moe 36
+      # attention on the GPU, experts of the first 35 of 40 layers in system RAM (34 leaves only ~50 MiB VRAM free)
+      -ngl 99 --n-cpu-moe 35
+      # larger physical batch: prefill 230 -> 480 tok/s with CPU experts (step 0.5)
+      -b 2048 -ub 2048
       -c 16384 -np 1
+      # read weights into RAM at load (35 s, 17.8 GB RSS); with mmap the first prompt >= 32 tokens paged in
+      # about 18 GB of experts and took 21 s, and llama-swap returned 502 EOF (step 0.5)
+      --load-mode none
       -fa on -ctk q8_0 -ctv q8_0
       --jinja
