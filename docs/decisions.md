@@ -55,3 +55,30 @@ ADR-style log. Newest entries at the bottom. Each entry: date, decision, why, al
   `huggingface_hub==2.2.0` (ships `hf-xet` 1.7.0).
 - **Alternatives**: bake models into the `llm` image (huge images, rebuild on every model change);
   download from llama-server's `-hf` flag at start (no pin, network needed at start).
+
+## 2026-10-18 `llm` service: llama-swap image and llama-server flags (step 0.4)
+
+- **Decision**: image `ghcr.io/mostlygeek/llama-swap:unified-cuda13` pinned at
+  `sha256:75f8c2ca3a495c55792d9dc12da037a6a8fa8e86808b7d0366803d63698039ac` (llama-swap v265,
+  llama-server at `/usr/local/bin/llama-server`, `--version` prints "0.7.0-dev, commit 547208d").
+  CUDA 13 because the driver reports CUDA 13.2. Flags are checked against `docs/llama-server-help.txt`.
+- **9B does not fit fully on the GPU**: `-ngl 99` failed with `cudaMalloc failed: out of memory`. The
+  model has 33 blocks; `--fit` reported 5,821 MiB needed for all of them with only 5,574 MiB free.
+  Starting value `-ngl 28` (5,255 MiB used with 2 x 16K q8_0 KV). Tune in step 0.5.
+- **MoE**: `-ngl 99 --n-cpu-moe 36` loads and uses 4,375 MiB VRAM, so there is room to lower
+  `--n-cpu-moe` in step 0.5. The "40 layers" figure from the plan is not yet checked against the GGUF.
+- **Config mount**: `./config` is mounted as a directory. A single-file bind mount kept serving the old
+  file after an edit (editors write a new inode), so llama-swap's `-watch-config` never saw the change.
+- **Why**: one model at a time is all 6 GB of VRAM allows (#19); flags only from `--help` output.
+- **Alternatives**: `unified-cuda` (CUDA 12) tag; plain llama-server without swapping (one model only).
+
+## 2026-10-18 Thinking mode is switched off per request
+
+- **Decision**: one model id per model. Interactive and extraction calls send
+  `extra_body={"chat_template_kwargs": {"enable_thinking": false}}`.
+- **Evidence** (2026-10-18, both models): with the kwarg, `reasoning_content` is empty and the answer
+  is in `content`. Without it, both models think by default. The 9B spent all of `max_tokens=1024` on
+  reasoning and returned empty `content`; the MoE thought for about 1,350 characters then answered.
+  `response_format: json_schema` with an enum returned valid JSON that respected the enum on both.
+- **Why**: no second model id with `--chat-template-kwargs`, so no reload when switching thinking.
+- **Alternatives**: a second llama-swap entry per model with thinking disabled server side.

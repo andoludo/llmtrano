@@ -18,5 +18,32 @@ services:
       - models:/models
     restart: "no"
 
+  llm:
+    profiles: [gpu]
+    # llama-swap with llama-server built for CUDA 13 (driver reports CUDA 13.2)
+    image: ghcr.io/mostlygeek/llama-swap:unified-cuda13@sha256:75f8c2ca3a495c55792d9dc12da037a6a8fa8e86808b7d0366803d63698039ac
+    environment:
+      LLAMA_SWAP_CONFIG: /etc/llmtrano/llama-swap.yaml
+      LLAMA_SWAP_LISTEN: 0.0.0.0:8080
+    volumes:
+      - models:/models:ro
+      # directory mount, not a file mount: editors replace files, which breaks file bind mounts
+      - ./config:/etc/llmtrano:ro
+    ports:
+      - "127.0.0.1:8080:8080"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/v1/models"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    restart: unless-stopped
+
 volumes:
   models:

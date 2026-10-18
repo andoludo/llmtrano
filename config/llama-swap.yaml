@@ -1,0 +1,31 @@
+# llama-swap: one OpenAI-compatible endpoint, one llama-server at a time (6 GB VRAM).
+# The `model` field of each request picks the entry below; the other server is stopped.
+# No ttl: the selected model stays loaded until another one is requested.
+# Every llama-server flag used here appears in docs/llama-server-help.txt.
+
+# The MoE GGUF is 22 GB read from disk, so allow a slow first load.
+healthCheckTimeout: 600
+
+models:
+  qwen3.5-9b:
+    cmd: |
+      llama-server
+      --host 127.0.0.1 --port ${PORT}
+      --model /models/qwen3.5-9b/Qwen_Qwen3.5-9B-Q4_K_M.gguf
+      # 28 of 33 layers on the GPU: all 33 need 5,821 MiB, only 5,574 MiB is free (--fit log, step 0.4)
+      -ngl 28
+      # two slots of 16K: extractor and responder
+      -c 32768 -np 2
+      -fa on -ctk q8_0 -ctv q8_0
+      --jinja
+
+  qwen3.6-35b-a3b:
+    cmd: |
+      llama-server
+      --host 127.0.0.1 --port ${PORT}
+      --model /models/qwen3.6-35b-a3b/Qwen_Qwen3.6-35B-A3B-Q4_K_M.gguf
+      # attention on the GPU, experts of the first 36 of 40 layers in system RAM
+      -ngl 99 --n-cpu-moe 36
+      -c 16384 -np 1
+      -fa on -ctk q8_0 -ctv q8_0
+      --jinja
