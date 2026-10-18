@@ -141,3 +141,28 @@ Peak RAM is sampled about every 3 s with `docker stats` and `free -m`.
   the MoE (15:01), and swap (8 GB) filled up. Budget: desktop about 7 GB + MoE 17.6 GB + worker 4 GB = about
   29 GB of 30.9 GB. The 9B model needs about 5 GB of host RAM, so 9B plus a simulation leaves about 15 GB free.
 - Worker `mem_limit` lowered from 8 GB to 6 GB (peak 3.95 GB, about 50% headroom).
+
+## Phase 0 gate (step 0.10)
+
+Measured 2026-10-18, commit `6f4003a`.
+
+- Fresh `git clone`, `cp .env.example .env`, `docker compose --profile gpu up -d --build`: every service
+  healthy, `model-fetch` exited 0. 3 min 49 s with Docker's build cache and the existing `models` volume
+  (a first build on a new machine adds about 10 minutes for the worker image and the 28 GB download).
+- From the ui: `qwen3.5-9b` answered; a one-year run of the tutorial house succeeded (`end_s` 31,536,000,
+  43.4 s, 50.4 MB result file, trano `0.52.0+4220d3c`); `qwen3.6-35b-a3b` answered a follow-up with the
+  conversation history (3 messages).
+
+## Summary for the phase 1 default model
+
+| | `qwen3.5-9b` (`-ngl 28`) | `qwen3.6-35b-a3b` (`--n-cpu-moe 35`) |
+| --- | --- | --- |
+| Decode | 23 to 24 tok/s | 36 to 40 tok/s |
+| Warm TTFT (same prompt) | 0.12 to 0.18 s | 0.13 to 0.21 s |
+| Uncached 43-token input | 0.33 s | 1.30 s |
+| Cold 2k prefix | 2.44 s | 3.63 s |
+| Load (swap to it) | 8.6 s | 33 s |
+| Host RAM | about 4 to 5 GB | 17.6 GB |
+| Host RAM left during a year simulation | about 15 GB | 2.9 GB (desktop light, no VM) |
+| JSON schema extraction test (step 0.4) | valid, but `insulation: none` for "roof insulated, walls bare" | valid, `insulation: partial` (correct) |
+
