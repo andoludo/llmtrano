@@ -125,3 +125,32 @@ ADR-style log. Newest entries at the bottom. Each entry: date, decision, why, al
   again, `alembic check` reports no drift.
 - **Alternatives**: plain `postgres:17` (pgvector is needed later for RAG; same image now avoids a switch);
   Redis instead of Valkey (license change; Valkey is the open fork with the same protocol).
+
+## 2026-10-18 Worker image and jobs (step 0.7b)
+
+- **Decision**:
+  - `docker/worker.Dockerfile` from `openmodelica/openmodelica:v1.26.9-ompython` pinned at
+    `sha256:91314c8bf3f26b11fbf8f3f3a8405be547ce3819d7eae915d988c34b7bd63a89` (Ubuntu 22.04, Python 3.10,
+    so uv 0.13.1 provides Python 3.12; uv image pinned at
+    `sha256:4a1f3666816dafadd20ceb71eac9a7d56d7ef30279f7d64048519ab901ada336`). Libraries are installed at
+    build time with `python -m trano.simulate.install_libraries` (about 5 minutes; image 5.2 GB).
+  - trano is a normal dependency from git, commit `4220d3cd2f9e2faee5613a4624dd363d8bd6064d` (branch
+    `claude/gifted-maxwell-wna0b6`, not `feat/llmtrano-runtime` as the plan named it). It has T1 to T8. The
+    api will need trano's validation in phase 1 anyway.
+  - arq 0.28.0 (released 2026-04-16, within the 12-month rule). `max_jobs = 1`, `max_tries = 1` (a run
+    that killed the worker would kill it again), `job_timeout = simulation_timeout_s + 60` so trano stops
+    `omc` and reports `timeout` before arq cancels the job. The plan said `job_timeout = simulation_timeout_s`.
+  - The worker's blocking work (trano, SQLAlchemy) runs in `asyncio.to_thread`.
+  - Output points: one per simulated hour (`number_of_intervals = duration / 3600`), 8,760 for a year.
+  - `trano_version` stored per run as `<version>+<commit>`, e.g. `0.52.0+4220d3c`.
+  - Runs as root in phase 0: OpenModelica installs libraries under `/root/.openmodelica`.
+    **Phase 4 hardening item**: non-root user with the libraries installed in a shared path.
+  - mypy reads trano's inline types with `follow_untyped_imports` because trano has no `py.typed` marker.
+- **trano issues found** (to fix in trano):
+  - `simulate_yaml` with a dict and no `name` uses the package name `model`, a Modelica keyword:
+    `checkModel(model.building)` fails with "No viable alternative near token: model". llmtrano passes
+    `name=run_<8 hex>`.
+  - `trano/simulate/simulate.py` emits `SyntaxWarning: invalid escape sequence '\;'` (the docker-runtime
+    `find ... \;` string) on Python 3.12.
+  - No `py.typed` marker.
+- **Alternatives**: Dramatiq or Celery (not needed while arq is maintained); running the worker as non-root now.

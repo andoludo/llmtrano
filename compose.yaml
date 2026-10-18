@@ -29,6 +29,35 @@ services:
       retries: 10
     restart: unless-stopped
 
+  worker:
+    build:
+      context: .
+      dockerfile: docker/worker.Dockerfile
+    image: llmtrano/worker:local
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      VALKEY_URL: redis://queue:6379/0
+      RUNS_DIR: /runs
+      SIMULATION_LIBRARY: ${SIMULATION_LIBRARY:-Buildings}
+      SIMULATION_TIMEOUT_S: ${SIMULATION_TIMEOUT_S:-1200}
+    volumes:
+      - runs:/runs
+    depends_on:
+      db:
+        condition: service_healthy
+      queue:
+        condition: service_healthy
+    # One OpenModelica build plus simulation; adjusted after measuring (docs/measurements.md, step 0.7).
+    mem_limit: 8g
+    healthcheck:
+      # arq writes a health key to Valkey every few seconds while the worker runs
+      test: ["CMD", "arq", "--check", "llmtrano.jobs.worker.WorkerSettings"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    restart: unless-stopped
+
   model-fetch:
     profiles: [gpu]
     build:
@@ -76,3 +105,4 @@ services:
 volumes:
   models:
   pgdata:
+  runs:

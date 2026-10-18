@@ -119,5 +119,22 @@ SLOs from the plan: warm TTFT under 1.5 s, decode 20 tok/s or more.
 
 ## Simulation and RAM under load (step 0.7)
 
-| Date | Run | Status | Duration (s) | Result file size | Peak host RAM (MiB) | Notes |
-| --- | --- | --- | --- | --- | --- | --- |
+Tutorial house (`tests/fixtures/first_model.yaml`, trano `0.52.0+4220d3c`, Buildings, OpenModelica 1.26.9),
+run through db + queue + worker with `python -m llmtrano.jobs.smoke`. Hourly output points.
+Duration is end to end in trano (`simulate_yaml`); the split is OpenModelica's own `simulate()` record.
+Peak RAM is sampled about every 3 s with `docker stats` and `free -m`.
+
+| Date | Run | Status | Duration (s) | Result file | OpenModelica split (s) | Peak worker RAM (MiB) | Min host available (MiB) | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 2026-10-18 | 1 day | succeeded | 26.1 | 2.89 MB | frontend 1.5, backend 5.5, simcode 0.8, templates 2.1, compile 4.5, simulation 0.4, total 14.7 | - | - | |
+| 2026-10-18 | 1 year (8,760 points) | succeeded | 40.1 | 50.42 MB | frontend 1.5, backend 5.4, simcode 0.7, templates 1.0, compile 4.2, simulation 20.3, total 33.0 | 3,684 | 12,772 | no model loaded |
+| 2026-10-18 | 1 year, MoE load attempted | succeeded | 46.1 | 50.42 MB | total 35.0 | 3,695 | 14,474 | invalid as a "MoE loaded" test: the MoE load was OOM-killed before the run (see below) |
+
+- About 11 s of each run is outside OpenModelica's record: trano's YAML to Modelica generation and `omc`
+  loading Modelica, IDEAS and Buildings. Translation plus C compilation is about 10 to 14 s; simulating a
+  day takes 0.4 s and a year 20 s.
+- **MoE plus simulation does not fit with the current desktop load.** At 15:01 the kernel's global OOM
+  killer killed `llama-server` while it loaded the MoE (`--load-mode none`, about 17.8 GB resident). At that
+  moment a VirtualBox VM held 6.3 GB, and swap (8 GB) filled up. A second load attempt, after the
+  simulation, succeeded but took 61 s and left 1.66 GB of host RAM available. The loaded-MoE year run is
+  not measured yet.
