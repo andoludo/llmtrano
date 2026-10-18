@@ -198,3 +198,21 @@ ADR-style log. Newest entries at the bottom. Each entry: date, decision, why, al
   with the MoE selected used the history (3 messages); "Simulate tutorial house" (1 day) went
   queued -> running -> succeeded in 24 s and showed the result file path.
 - **Alternatives**: a `gr.ChatInterface` (less control over the model dropdown and history format).
+
+## 2026-10-18 Phase 1 default model (phase 0 gate, decided with Ando)
+
+- **Decision**: `qwen3.5-9b` is the default for interactive turns (extraction, wording the next question,
+  short answers): `LLM_DEFAULT_MODEL=qwen3.5-9b`. `qwen3.6-35b-a3b` is kept for interpretation (explaining
+  simulation results): `LLM_INTERPRET_MODEL=qwen3.6-35b-a3b`. Both values are already the defaults in
+  `Settings` and `.env.example`.
+- **Why** (numbers in docs/measurements.md, "Summary for the phase 1 default model"):
+  - RAM: the 9B uses about 4 to 5 GB of host RAM and leaves about 15 GB free during a year simulation; the
+    MoE uses 17.6 GB and left 2.9 GB, and was OOM-killed once with a VM open.
+  - Swaps: loading the 9B takes 8.6 s, the MoE 33 s. The interactive model is the one that stays loaded.
+  - Latency: the 9B prefills an uncached 43-token turn in 0.33 s vs 1.30 s for the MoE; both meet the
+    warm TTFT SLO, and the 9B meets the 20 tok/s decode SLO with little margin (23 to 24 tok/s).
+- **Risks to watch in phase 1**: the 9B got one enum wrong in the step 0.4 extraction test ("roof insulated,
+  walls bare" -> `none`, the MoE said `partial`). The phase 1 eval set decides whether extraction quality is
+  good enough; if not, revisit (MoE for extraction, or a better prompt or schema).
+- **Alternatives**: MoE for everything (no swaps, faster decode, better extraction in one test, but no RAM
+  headroom next to a simulation on this laptop).
