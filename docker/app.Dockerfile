@@ -10,7 +10,8 @@ COPY --from=ghcr.io/astral-sh/uv:0.13.1@sha256:4a1f3666816dafadd20ceb71eac9a7d56
 ENV UV_LINK_MODE=copy \
     UV_COMPILE_BYTECODE=1 \
     UV_PYTHON_DOWNLOADS=never \
-    PATH=/app/.venv/bin:$PATH
+    PATH=/app/.venv/bin:$PATH \
+    MPLCONFIGDIR=/tmp/matplotlib
 
 WORKDIR /app
 

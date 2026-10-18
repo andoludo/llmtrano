@@ -90,6 +90,31 @@ services:
       start_period: 15s
     restart: unless-stopped
 
+  ui:
+    image: llmtrano/app:local  # built by the api service
+    command: ["python", "-m", "llmtrano.ui.app"]
+    environment:
+      API_URL: http://api:8000
+      LLM_DEFAULT_MODEL: ${LLM_DEFAULT_MODEL:-qwen3.5-9b}
+      SIMULATION_TIMEOUT_S: ${SIMULATION_TIMEOUT_S:-1200}
+      GRADIO_ANALYTICS_ENABLED: "False"
+    ports:
+      - "127.0.0.1:7860:7860"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://localhost:7860/', timeout=5)"
+      interval: 10s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    restart: unless-stopped
+
   model-fetch:
     profiles: [gpu]
     build:

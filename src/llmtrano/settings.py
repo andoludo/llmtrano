@@ -21,3 +21,4 @@ class Settings(BaseSettings):
     runs_dir: Path = Path("runs")
     simulation_library: str = "Buildings"
     simulation_timeout_s: int = 1200
+    api_url: str = "http://localhost:8000"  # used by the ui; the ui talks only to the api

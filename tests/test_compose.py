@@ -4,13 +4,13 @@ import json
 import os
 import time
 import urllib.request
-from pathlib import Path
 from typing import Any
 
 import pytest
 
+from llmtrano.data import tutorial_house_yaml
+
 API = os.environ.get("LLMTRANO_API_URL", "http://localhost:8000")
-FIXTURE = Path(__file__).parent / "fixtures" / "first_model.yaml"
 
 pytestmark = pytest.mark.compose
 
@@ -55,7 +55,7 @@ def test_chat_streams_tokens() -> None:
 
 @pytest.mark.simulation
 def test_run_one_day_succeeds() -> None:
-    status, body = _request("POST", "/runs", {"yaml_text": FIXTURE.read_text(), "end_time_s": 86400})
+    status, body = _request("POST", "/runs", {"yaml_text": tutorial_house_yaml(), "end_time_s": 86400})
     assert status == 201
     run_id = json.loads(body)["id"]
     deadline = time.monotonic() + 600

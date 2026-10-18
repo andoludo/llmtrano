@@ -178,3 +178,23 @@ ADR-style log. Newest entries at the bottom. Each entry: date, decision, why, al
   if it is kept beyond phase 0.
 - **Alternatives**: sse-starlette (not needed now); api unhealthy without the LLM (would block the ui and
   simulation work without a GPU).
+
+## 2026-10-18 ui skeleton (step 0.9)
+
+- **Decision**:
+  - Gradio `>=6.30.0,<7` Blocks app in `llmtrano.ui.app`, served by the `ui` service from the same
+    `llmtrano/app:local` image as the api (`command: python -m llmtrano.ui.app`), `127.0.0.1:7860`.
+  - The ui talks only to the api (`API_URL`, new `Settings.api_url`) with `httpx>=0.28.1,<1`; SSE from
+    `/chat` is parsed by `parse_sse` (unit tested).
+  - Gradio 6 stores chat content as a list of parts (`[{"type": "text", "text": ...}]`) plus `metadata` and
+    `options`; `to_api_messages` turns history into plain `{"role", "content": str}`. Found in the browser:
+    the second turn returned 422 before this conversion.
+  - `GRADIO_ANALYTICS_ENABLED=False` (local-first: no usage analytics leave the machine).
+  - `MPLCONFIGDIR=/tmp/matplotlib` in the app image: matplotlib (imported by Gradio) cannot write a cache
+    under the non-root user's missing home.
+  - trano's tutorial house moved from `tests/fixtures/` into the package (`llmtrano/data/first_model.yaml`,
+    `llmtrano.data.tutorial_house_yaml()`), so the ui image ships it and the smoke run needs no mount.
+- **Checked in the browser** (2026-10-18): dropdown filled from `/models`; a 9B answer streamed; a follow-up
+  with the MoE selected used the history (3 messages); "Simulate tutorial house" (1 day) went
+  queued -> running -> succeeded in 24 s and showed the result file path.
+- **Alternatives**: a `gr.ChatInterface` (less control over the model dropdown and history format).

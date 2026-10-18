@@ -2,7 +2,7 @@
 
 Run inside a container of the worker image, so it can read result files on the `runs` volume::
 
-    docker compose run --rm -v ./tests/fixtures:/app/tests/fixtures:ro worker python -m llmtrano.jobs.smoke
+    docker compose run --rm worker python -m llmtrano.jobs.smoke
 """
 
 import argparse
@@ -17,6 +17,7 @@ from arq import create_pool
 from arq.connections import RedisSettings
 from arq.jobs import Job
 
+from llmtrano.data import tutorial_house_yaml
 from llmtrano.db.migrate import upgrade_head
 from llmtrano.db.models import Run
 from llmtrano.db.session import make_sessionmaker
@@ -87,10 +88,10 @@ def report(outcomes: list[Outcome]) -> str:
     return "\n".join(lines)
 
 
-async def main_async(fixture: Path, cases: list[str]) -> list[Outcome]:
+async def main_async(fixture: Path | None, cases: list[str]) -> list[Outcome]:
     settings = Settings()
     upgrade_head(settings.database_url)
-    yaml_text = fixture.read_text()
+    yaml_text = fixture.read_text() if fixture else tutorial_house_yaml()
     ends = {"day": float(DAY_S), "year": float(YEAR_S)}
     return [await run_case(case, yaml_text, ends[case], settings) for case in cases]
 
@@ -98,7 +99,7 @@ async def main_async(fixture: Path, cases: list[str]) -> list[Outcome]:
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     parser = argparse.ArgumentParser(description="Simulate the tutorial house through the job queue.")
-    parser.add_argument("--fixture", type=Path, default=Path("tests/fixtures/first_model.yaml"))
+    parser.add_argument("--fixture", type=Path, help="YAML model; the packaged tutorial house when omitted")
     parser.add_argument("--cases", nargs="+", choices=["day", "year"], default=["day", "year"])
     args = parser.parse_args()
     outcomes = asyncio.run(main_async(args.fixture, args.cases))
