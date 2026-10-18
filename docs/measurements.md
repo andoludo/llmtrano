@@ -129,12 +129,15 @@ Peak RAM is sampled about every 3 s with `docker stats` and `free -m`.
 | 2026-10-18 | 1 day | succeeded | 26.1 | 2.89 MB | frontend 1.5, backend 5.5, simcode 0.8, templates 2.1, compile 4.5, simulation 0.4, total 14.7 | - | - | |
 | 2026-10-18 | 1 year (8,760 points) | succeeded | 40.1 | 50.42 MB | frontend 1.5, backend 5.4, simcode 0.7, templates 1.0, compile 4.2, simulation 20.3, total 33.0 | 3,684 | 12,772 | no model loaded |
 | 2026-10-18 | 1 year, MoE load attempted | succeeded | 46.1 | 50.42 MB | total 35.0 | 3,695 | 14,474 | invalid as a "MoE loaded" test: the MoE load was OOM-killed before the run (see below) |
+| 2026-10-18 | 1 year, MoE loaded | succeeded | 39.9 | 50.42 MB | frontend 1.4, backend 5.3, simcode 0.8, templates 0.9, compile 4.0, simulation 18.9, total 31.3 | 3,954 | 2,895 | VM closed; llm peak 17,562 MiB; peak host used 28,012 MiB of 30,907; no OOM kill; MoE answered in 0.23 s afterwards |
 
 - About 11 s of each run is outside OpenModelica's record: trano's YAML to Modelica generation and `omc`
   loading Modelica, IDEAS and Buildings. Translation plus C compilation is about 10 to 14 s; simulating a
   day takes 0.4 s and a year 20 s.
-- **MoE plus simulation does not fit with the current desktop load.** At 15:01 the kernel's global OOM
-  killer killed `llama-server` while it loaded the MoE (`--load-mode none`, about 17.8 GB resident). At that
-  moment a VirtualBox VM held 6.3 GB, and swap (8 GB) filled up. A second load attempt, after the
-  simulation, succeeded but took 61 s and left 1.66 GB of host RAM available. The loaded-MoE year run is
-  not measured yet.
+- **MoE plus a simulation fits only with a light desktop.** With the MoE loaded (17.6 GB) and a year
+  simulation running (3.95 GB peak), host RAM in use peaked at 28.0 GB of 30.9 GB, leaving 2.9 GB. The
+  simulation was as fast as without the model (39.9 s vs 40.1 s).
+- With a VirtualBox VM open (6.3 GB) the kernel's global OOM killer killed `llama-server` while it loaded
+  the MoE (15:01), and swap (8 GB) filled up. Budget: desktop about 7 GB + MoE 17.6 GB + worker 4 GB = about
+  29 GB of 30.9 GB. The 9B model needs about 5 GB of host RAM, so 9B plus a simulation leaves about 15 GB free.
+- Worker `mem_limit` lowered from 8 GB to 6 GB (peak 3.95 GB, about 50% headroom).

@@ -47,8 +47,8 @@ services:
         condition: service_healthy
       queue:
         condition: service_healthy
-    # One OpenModelica build plus simulation; adjusted after measuring (docs/measurements.md, step 0.7).
-    mem_limit: 8g
+    # One OpenModelica build plus simulation peaks at 3.95 GB for the tutorial year (docs/measurements.md).
+    mem_limit: 6g
     healthcheck:
       # arq writes a health key to Valkey every few seconds while the worker runs
       test: ["CMD", "arq", "--check", "llmtrano.jobs.worker.WorkerSettings"]
