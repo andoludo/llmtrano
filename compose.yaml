@@ -1,0 +1,22 @@
+name: llmtrano
+
+services:
+  model-fetch:
+    profiles: [gpu]
+    build:
+      context: .
+      dockerfile: docker/model-fetch.Dockerfile
+    image: llmtrano/model-fetch:local
+    environment:
+      MODEL_9B_REPO: ${MODEL_9B_REPO:?set in .env}
+      MODEL_9B_FILE: ${MODEL_9B_FILE:?set in .env}
+      MODEL_9B_REVISION: ${MODEL_9B_REVISION:?set in .env}
+      MODEL_MOE_REPO: ${MODEL_MOE_REPO:?set in .env}
+      MODEL_MOE_FILE: ${MODEL_MOE_FILE:?set in .env}
+      MODEL_MOE_REVISION: ${MODEL_MOE_REVISION:?set in .env}
+    volumes:
+      - models:/models
+    restart: "no"
+
+volumes:
+  models:
