@@ -20,7 +20,7 @@ from arq.jobs import Job
 from llmtrano.db.migrate import upgrade_head
 from llmtrano.db.models import Run
 from llmtrano.db.session import make_sessionmaker
-from llmtrano.jobs.worker import enqueue_simulation
+from llmtrano.jobs.queue import enqueue_simulation
 from llmtrano.settings import Settings
 
 log = logging.getLogger("llmtrano.jobs.smoke")

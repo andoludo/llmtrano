@@ -154,3 +154,27 @@ ADR-style log. Newest entries at the bottom. Each entry: date, decision, why, al
     `find ... \;` string) on Python 3.12.
   - No `py.typed` marker.
 - **Alternatives**: Dramatiq or Celery (not needed while arq is maintained); running the worker as non-root now.
+
+## 2026-10-18 api skeleton (step 0.8)
+
+- **Decision**:
+  - `llmtrano.llm.client.make_llm_client()`: one `AsyncOpenAI` with timeouts connect 5 s / read 120 s and
+    `max_retries=1`. The SDK retries connection errors and 5xx, which also absorbs llama-swap's occasional
+    502 EOF (step 0.5). `NO_THINKING` lives next to it. (openai 3.x is built on `httpx2`, not `httpx`.)
+  - FastAPI `>=0.145.0,<0.146` (released 2026-10-18, the same day) with its built-in SSE
+    (`fastapi.sse.EventSourceResponse` + `ServerSentEvent`), uvicorn `>=0.54.0,<0.55`. No sse-starlette.
+  - `/chat` events: `token` (`{"text": ...}`), then `done`, or `error`. Temporary, removed in phase 1.
+  - `/health`: 503 when db or queue is down; when only the LLM is down it answers 200 `degraded`, so the
+    api stays healthy without the `gpu` profile (checked: llm stopped -> `degraded`, `/models` 503).
+  - `POST /runs` rejects text that is not a YAML mapping (422) before inserting; `GET /runs/{id}` does not
+    echo the YAML back.
+  - Services (sessions, queue, LLM) live on `app.state` and are injected by `create_app(services)` in tests.
+    `enqueue_simulation` moved to `llmtrano.jobs.queue` so the api never imports trano's simulation code.
+  - `docker/app.Dockerfile`: `python:3.12-slim` (same digest as model-fetch), uv, runs as uid 10001.
+    Image 2.3 GB because trano's dependencies come along (needed for validation in phase 1).
+  - `llmtrano.logs.configure_logging()` gives the `llmtrano` logger a handler in api and worker, whose
+    runners (uvicorn, arq) configure only their own loggers.
+- **Known gap**: `llmtrano.bench` still builds its own sync `OpenAI` client; move it onto the shared factory
+  if it is kept beyond phase 0.
+- **Alternatives**: sse-starlette (not needed now); api unhealthy without the LLM (would block the ui and
+  simulation work without a GPU).

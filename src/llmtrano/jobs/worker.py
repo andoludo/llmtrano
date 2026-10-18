@@ -12,18 +12,18 @@ from pathlib import Path
 from typing import Any, ClassVar
 
 import yaml
-from arq.connections import ArqRedis, RedisSettings
+from arq.connections import RedisSettings
 from sqlalchemy.orm import Session, sessionmaker
 from trano.api import simulate_yaml
 from trano.simulate.simulate import SimulationOptions
 
 from llmtrano.db.models import Run, RunStatus
 from llmtrano.db.session import make_sessionmaker
+from llmtrano.logs import configure_logging
 from llmtrano.settings import Settings
 
 log = logging.getLogger(__name__)
 
-JOB_NAME = "run_simulation"
 LOG_TAIL_CHARS = 5_000
 OUTPUT_STEP_S = 3600  # one stored output point per simulated hour
 # Margin over trano's own timeout, so trano stops omc and reports `timeout` before arq cancels the job.
@@ -113,18 +113,8 @@ async def run_simulation(ctx: dict[str, Any], run_id: str) -> str:
     return status.value
 
 
-async def enqueue_simulation(redis: ArqRedis, run_id: uuid.UUID) -> None:
-    """Queue a simulation; the run id is the job id, so a run is never queued twice."""
-    await redis.enqueue_job(JOB_NAME, str(run_id), _job_id=str(run_id))
-
-
 async def startup(ctx: dict[str, Any]) -> None:
-    # arq's CLI configures only its own logger; give ours a handler too.
-    if not logging.getLogger("llmtrano").handlers:
-        handler = logging.StreamHandler()
-        handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s"))
-        logging.getLogger("llmtrano").addHandler(handler)
-        logging.getLogger("llmtrano").setLevel(logging.INFO)
+    configure_logging()  # arq's CLI configures only its own logger
     settings = Settings()
     ctx["settings"] = settings
     ctx["sessions"] = make_sessionmaker(settings.database_url)
