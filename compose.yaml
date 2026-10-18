@@ -130,6 +130,7 @@ services:
       MODEL_MOE_REVISION: ${MODEL_MOE_REVISION:?set in .env}
     volumes:
       - models:/models
+    # one-shot job: no healthcheck, no restart; llm waits for it to complete successfully
     restart: "no"
 
   llm:
@@ -145,6 +146,10 @@ services:
       - ./config:/etc/llmtrano:ro
     ports:
       - "127.0.0.1:8080:8080"
+    depends_on:
+      # models must be in the volume first; a second model-fetch run exits in under a second
+      model-fetch:
+        condition: service_completed_successfully
     deploy:
       resources:
         reservations:

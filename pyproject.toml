@@ -2,7 +2,7 @@
 name = "llmtrano"
 version = "0.1.0"
 description = "Local-first LLM assistant that turns a house description into a trano model, simulates it and explains the result."
-readme = "CLAUDE.md"
+readme = "README.md"
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "alembic>=1.20.0,<2",

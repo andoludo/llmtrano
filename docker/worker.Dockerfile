@@ -25,7 +25,7 @@ RUN uv sync --frozen --no-dev --no-install-project
 # Installed under /root/.openmodelica, which is why the worker runs as root in phase 0.
 RUN python -m trano.simulate.install_libraries
 
-COPY alembic.ini CLAUDE.md ./
+COPY alembic.ini README.md ./
 COPY src ./src
 RUN uv sync --frozen --no-dev
 
