@@ -1,5 +1,5 @@
 version = 1
-revision = 5
+revision = 3
 requires-python = "==3.12.*"
 
 [[package]]
@@ -1069,7 +1069,7 @@ requires-dist = [
     { name = "pydantic-settings", specifier = ">=2.16.0,<3" },
     { name = "pyyaml", specifier = ">=6.0.3,<7" },
     { name = "sqlalchemy", specifier = ">=2.1.5,<2.2" },
-    { name = "trano", git = "https://github.com/andoludo/trano?rev=4220d3cd2f9e2faee5613a4624dd363d8bd6064d" },
+    { name = "trano", specifier = ">=0.56.0,<0.57" },
     { name = "uvicorn", specifier = ">=0.54.0,<0.55" },
 ]
 
@@ -2309,8 +2309,8 @@ wheels = [
 
 [[package]]
 name = "trano"
-version = "0.52.0"
-source = { git = "https://github.com/andoludo/trano?rev=4220d3cd2f9e2faee5613a4624dd363d8bd6064d#4220d3cd2f9e2faee5613a4624dd363d8bd6064d" }
+version = "0.56.0"
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "buildingspy" },
     { name = "docker" },
@@ -2323,8 +2323,33 @@ dependencies = [
     { name = "pydot" },
     { name = "python-docx" },
     { name = "pyyaml-include" },
+    { name = "trano-simulate" },
     { name = "typer" },
     { name = "yattag" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/d6/90/2eb99b06076262e286834e610416cbfdda7cab4402715fd2ccbdc623c52e/trano-0.56.0.tar.gz", hash = "sha256:80a840c3a8b617b9549cbf80000e898d1c7922385f776929e205638f66005678", size = 275495, upload-time = "2026-10-19T05:41:29.129Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/0c/cc/ee779167c34dec93c731093a60096377f094210303eca77ad07cff0d1567/trano-0.56.0-py3-none-any.whl", hash = "sha256:1a45af99945427b86cec4fc13734a14c1c73e91d1a15a8f8589486bd9f40468e", size = 330660, upload-time = "2026-10-19T05:41:27.737Z" },
+]
+
+[[package]]
+name = "trano-simulate"
+version = "0.2.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "buildingspy" },
+    { name = "docker" },
+    { name = "jinja2" },
+    { name = "matplotlib" },
+    { name = "pandas" },
+    { name = "plotly" },
+    { name = "pydantic" },
+    { name = "python-docx" },
+    { name = "yattag" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/34/c5/56ce930c7d7f98036aec119349f4127dd311edd209c1851a5a1465ab68fb/trano_simulate-0.2.0.tar.gz", hash = "sha256:b9f006acdecba3f457051841a6a4a1eca965260d128c6f5703cf47ff0e9a9af9", size = 24356, upload-time = "2026-10-19T04:56:05.68Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/b2/97/b32247a5af3f7e0d468421ac1a0f0a8f0ecf7c14ff16c35f51a8307f7243/trano_simulate-0.2.0-py3-none-any.whl", hash = "sha256:3b4d6b1088937897da6d207345e2b71d26bf58a6b7e3b146c98275568ed011cd", size = 27850, upload-time = "2026-10-19T04:56:04.524Z" },
 ]
 
 [[package]]

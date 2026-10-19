@@ -7,7 +7,7 @@ from typing import Any
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
-from trano.simulate.result import SimulationErrorKind, SimulationResult
+from trano_simulate.result import SimulationErrorKind, SimulationResult
 
 from llmtrano.db.models import Base, Run, RunStatus
 from llmtrano.jobs import worker

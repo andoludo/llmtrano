@@ -166,3 +166,29 @@ Measured 2026-10-18, commit `6f4003a`.
 | Host RAM left during a year simulation | about 15 GB | 2.9 GB (desktop light, no VM) |
 | JSON schema extraction test (step 0.4) | valid, but `insulation: none` for "roof insulated, walls bare" | valid, `insulation: partial` (correct) |
 
+
+## trano 0.56.0 check (step 1.0)
+
+Tutorial house (`first_model.yaml`, unchanged in trano 0.56.0), OpenModelica 1.26.9, local runtime, one output
+point per hour. Measured 2026-10-19 in a 4 vCPU cloud sandbox, not the laptop: durations are about 2 to 3 times the
+step 0.7 numbers and are not comparable with them.
+
+| Library | Period | Status | Duration (s) | Phases (T6, seconds from start) |
+| --- | --- | --- | --- | --- |
+| Buildings 13.0.0 | 1 day | succeeded | 75.8 | generating 0.0, compiling 3.8, simulating 63.6, done 75.8 |
+| IDEAS 3.0.0 | 1 day | succeeded | 62.8 | generating 0.0, compiling 0.5, simulating 56.3, done 62.8 |
+| Buildings 13.0.0 | 1 year | succeeded | 115.2 | generating 0.0, compiling 0.5, simulating 60.3, done 115.2 |
+| IDEAS 3.0.0 | 1 year | succeeded | 79.3 | generating 0.0, compiling 0.4, simulating 50.7, done 79.3 |
+
+KPIs for one year (`trano.kpi.building_kpis`, 100 m2):
+
+| Library | Heating (kWh) | kWh/m2 | Peak (W) | Hours below set point | `EHea` at the end (kWh) |
+| --- | --- | --- | --- | --- | --- |
+| Buildings | 6,085.5 | 60.9 | 3,862 | 274.0 | 5,995.7 |
+| IDEAS | 5,271.6 | 52.7 | 3,804 | 224.7 | 5,193.5 |
+
+- The trapezoid on the hourly grid reads 1.5% above the heater's own energy meter `EHea`. For one winter week
+  (Buildings): hourly grid 238.15 vs 236.54 kWh (+0.68%), 1-minute grid 236.44 vs 236.48 kWh (-0.02%). Peak
+  power for that week: 3,355 W hourly, 3,384 W on the 1-minute grid.
+- Buildings and IDEAS differ by 13% on the same YAML (different zone, wall and window models). Phase 1 uses
+  Buildings throughout, so its numbers are only compared with Buildings runs.

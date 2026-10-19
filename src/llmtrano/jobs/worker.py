@@ -15,7 +15,7 @@ import yaml
 from arq.connections import RedisSettings
 from sqlalchemy.orm import Session, sessionmaker
 from trano.api import simulate_yaml
-from trano.simulate.simulate import SimulationOptions
+from trano_simulate.simulate import SimulationOptions
 
 from llmtrano.db.models import Run, RunStatus
 from llmtrano.db.session import make_sessionmaker
@@ -40,7 +40,7 @@ def modelica_package_name(run_id: uuid.UUID) -> str:
 
 
 def trano_version() -> str:
-    """trano's version plus the commit it was installed from, e.g. ``0.52.0+4220d3c``."""
+    """trano's version, e.g. ``0.56.0``, plus the commit when installed from git, e.g. ``0.52.0+4220d3c``."""
     distribution = importlib.metadata.distribution("trano")
     direct_url = distribution.read_text("direct_url.json")
     commit = json.loads(direct_url).get("vcs_info", {}).get("commit_id", "") if direct_url else ""

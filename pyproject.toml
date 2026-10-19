@@ -16,7 +16,7 @@ dependencies = [
     "pydantic-settings>=2.16.0,<3",
     "pyyaml>=6.0.3,<7",
     "sqlalchemy>=2.1.5,<2.2",
-    "trano",
+    "trano>=0.56.0,<0.57",
     "uvicorn>=0.54.0,<0.55",
 ]
 
@@ -50,7 +50,8 @@ files = ["src"]
 plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
-# trano has inline types but no py.typed marker yet: read them anyway, do not check trano itself
+# trano has inline types but no py.typed marker yet: read them anyway, do not check trano itself.
+# trano-simulate ships py.typed and needs no override.
 module = ["trano", "trano.*"]
 follow_untyped_imports = true
 
@@ -63,5 +64,3 @@ markers = [
     "compose: needs the running docker compose stack",
 ]
 
-[tool.uv.sources]
-trano = { git = "https://github.com/andoludo/trano", rev = "4220d3cd2f9e2faee5613a4624dd363d8bd6064d" }

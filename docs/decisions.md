@@ -216,3 +216,36 @@ ADR-style log. Newest entries at the bottom. Each entry: date, decision, why, al
   good enough; if not, revisit (MoE for extraction, or a better prompt or schema).
 - **Alternatives**: MoE for everything (no swaps, faster decode, better extraction in one test, but no RAM
   headroom next to a simulation on this laptop).
+
+## 2026-10-19 trano from PyPI, T6 to T8 checked (step 1.0)
+
+- **Decision**: depend on `trano>=0.56.0,<0.57` from PyPI instead of the git commit `4220d3c`. Capped at the
+  minor version because trano is 0.x and 0.56.0 itself moved code into a new package.
+- **Why**: T1 to T8 were merged into trano `master` (PR #55, which contains `4220d3c`) and every release from
+  0.54.0 has them, so the plan's "pinned commit until a release contains them" no longer applies. The branches
+  `feat/llmtrano-runtime` and `claude/gifted-maxwell-wna0b6` no longer exist. trano 0.56.0 (released
+  2026-10-19) moves simulation into `trano-simulate` 0.2.0 (PR #57): `trano.simulate.*` still works as an
+  alias, but llmtrano now imports `trano_simulate` (typed, ships `py.typed`) as trano advises, and the worker
+  image installs libraries with `python -m trano_simulate.install_libraries`. `git` left the worker image.
+  `trano_version()` now stores `0.56.0` (a PyPI install has no commit).
+- **Checked** (OpenModelica 1.26.9, Buildings 13.0.0, IDEAS 3.0.0, numbers in docs/measurements.md, step 1.0):
+  - T6: `on_phase` called with generating, compiling, simulating, done, in that order, for both libraries.
+  - T7: the variable names in `trano.kpi` were confirmed from real result files of `first_model.yaml` for
+    Buildings and for IDEAS (`Reader(path, "openmodelica").varNames(".*")`): `QHea_flow`, `TAir.T` and
+    `heaSch.y[1]` under `building.emission1.heating_001`, the same in both libraries.
+  - T8: a broken model gives one line per error with the YAML path and the field description.
+- **Found, to fix in trano** (not blocking phase 1, Ando decides):
+  - `trano.kpi` integrates `QHea_flow` with a trapezoid on the output grid. The heater's own `EHea` (an
+    integrator of `QHea_flow` in trano's `IdealHeatingCooling`) is exact. On the hourly grid the trapezoid
+    reads 1.5% high for a year (6,085 vs 5,996 kWh, Buildings; same for IDEAS) because the power spikes after
+    the morning set point step and decays within the hour. With a 1-minute grid both agree to 0.02%.
+    Proposed fix: energy = `EHea(end) - EHea(start)` when the variable exists, trapezoid otherwise.
+  - Still open from step 0.7b: the dict default package name `model` (llmtrano passes `name=`), no `py.typed`.
+- **Environment note**: the cloud sandbox where this was checked blocks `ghcr.io` blobs and
+  `libraries.openmodelica.org`, so the worker image could not be built there; the same steps ran in the pinned
+  OpenModelica image with the libraries cloned from their GitHub tags, and `ModelicaServices` patched the way
+  OpenModelica's `+maint.om` build does (`loadResource` through `OpenModelica.Scripting.uriToFilename`; without
+  it, `modelica://` weather paths do not resolve). On the laptop the Dockerfile is unchanged apart from the module
+  name.
+- **Alternatives**: keep the git pin on `master` (no reason now that releases exist); keep importing the
+  `trano.simulate` aliases (works, but trano marks them as compatibility only).
