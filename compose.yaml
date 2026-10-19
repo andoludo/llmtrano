@@ -1,0 +1,170 @@
+name: llmtrano
+
+services:
+  db:
+    image: pgvector/pgvector:pg17@sha256:ac08538c6f8b9904c33c8224c5e5706dbe760aca29db1d096972b4052c22a75d
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?set in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set in .env}
+      POSTGRES_DB: ${POSTGRES_DB:?set in .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  queue:
+    image: valkey/valkey:8@sha256:640c5e62cea04b6d6f2084232651d0cc70362d31f4f805e7be94dbed6855e8f2
+    ports:
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: .
+      dockerfile: docker/worker.Dockerfile
+    image: llmtrano/worker:local
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      VALKEY_URL: redis://queue:6379/0
+      RUNS_DIR: /runs
+      SIMULATION_LIBRARY: ${SIMULATION_LIBRARY:-Buildings}
+      SIMULATION_TIMEOUT_S: ${SIMULATION_TIMEOUT_S:-1200}
+    volumes:
+      - runs:/runs
+    depends_on:
+      db:
+        condition: service_healthy
+      queue:
+        condition: service_healthy
+    # One OpenModelica build plus simulation peaks at 3.95 GB for the tutorial year (docs/measurements.md).
+    mem_limit: 6g
+    healthcheck:
+      # arq writes a health key to Valkey every few seconds while the worker runs
+      test: ["CMD", "arq", "--check", "llmtrano.jobs.worker.WorkerSettings"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      dockerfile: docker/app.Dockerfile
+    image: llmtrano/app:local
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      VALKEY_URL: redis://queue:6379/0
+      # llm runs only with the gpu profile; without it /health reports "degraded" and stays healthy
+      LLM_BASE_URL: http://llm:8080/v1
+      LLM_DEFAULT_MODEL: ${LLM_DEFAULT_MODEL:-qwen3.5-9b}
+      LLM_INTERPRET_MODEL: ${LLM_INTERPRET_MODEL:-qwen3.6-35b-a3b}
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      queue:
+        condition: service_healthy
+    healthcheck:
+      # no curl in python:slim; /health answers 503 when db or queue is down
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)"
+      interval: 10s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    restart: unless-stopped
+
+  ui:
+    image: llmtrano/app:local  # built by the api service
+    command: ["python", "-m", "llmtrano.ui.app"]
+    environment:
+      API_URL: http://api:8000
+      LLM_DEFAULT_MODEL: ${LLM_DEFAULT_MODEL:-qwen3.5-9b}
+      SIMULATION_TIMEOUT_S: ${SIMULATION_TIMEOUT_S:-1200}
+      GRADIO_ANALYTICS_ENABLED: "False"
+    ports:
+      - "127.0.0.1:7860:7860"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://localhost:7860/', timeout=5)"
+      interval: 10s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    restart: unless-stopped
+
+  model-fetch:
+    profiles: [gpu]
+    build:
+      context: .
+      dockerfile: docker/model-fetch.Dockerfile
+    image: llmtrano/model-fetch:local
+    environment:
+      MODEL_9B_REPO: ${MODEL_9B_REPO:?set in .env}
+      MODEL_9B_FILE: ${MODEL_9B_FILE:?set in .env}
+      MODEL_9B_REVISION: ${MODEL_9B_REVISION:?set in .env}
+      MODEL_MOE_REPO: ${MODEL_MOE_REPO:?set in .env}
+      MODEL_MOE_FILE: ${MODEL_MOE_FILE:?set in .env}
+      MODEL_MOE_REVISION: ${MODEL_MOE_REVISION:?set in .env}
+    volumes:
+      - models:/models
+    # one-shot job: no healthcheck, no restart; llm waits for it to complete successfully
+    restart: "no"
+
+  llm:
+    profiles: [gpu]
+    # llama-swap with llama-server built for CUDA 13 (driver reports CUDA 13.2)
+    image: ghcr.io/mostlygeek/llama-swap:unified-cuda13@sha256:75f8c2ca3a495c55792d9dc12da037a6a8fa8e86808b7d0366803d63698039ac
+    environment:
+      LLAMA_SWAP_CONFIG: /etc/llmtrano/llama-swap.yaml
+      LLAMA_SWAP_LISTEN: 0.0.0.0:8080
+    volumes:
+      - models:/models:ro
+      # directory mount, not a file mount: editors replace files, which breaks file bind mounts
+      - ./config:/etc/llmtrano:ro
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      # models must be in the volume first; a second model-fetch run exits in under a second
+      model-fetch:
+        condition: service_completed_successfully
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/v1/models"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    restart: unless-stopped
+
+volumes:
+  models:
+  pgdata:
+  runs:
