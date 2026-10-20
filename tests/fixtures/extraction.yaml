@@ -1,0 +1,73 @@
+# Extraction outputs for the pipeline tests. Hand-written in the shape the model returns (no LLM was available
+# when they were written); replace them with recordings from `pytest -m llm tests/test_extraction.py`.
+- name: precise
+  message: "Semi-detached house from 1978, 125 m2 on two floors, HR glass, roof has 12 cm of wool."
+  outputs:
+    - '{"facts": [{"field": "building_type", "value": "semi_detached", "scenario": "baseline", "evidence": "Semi-detached house", "confidence": "high"}, {"field": "construction_period", "value": "1978", "scenario": "baseline", "evidence": "from 1978", "confidence": "high"}, {"field": "heated_floor_area_m2", "value": "125 m2", "scenario": "baseline", "evidence": "125 m2 on two floors", "confidence": "high"}, {"field": "storeys", "value": "2", "scenario": "baseline", "evidence": "on two floors", "confidence": "high"}, {"field": "glazing", "value": "HR glass", "scenario": "baseline", "evidence": "HR glass", "confidence": "high"}, {"field": "roof_insulation", "value": "12 cm", "scenario": "baseline", "evidence": "roof has 12 cm of wool", "confidence": "high"}], "user_says_complete": false}'
+  expected:
+    building_type: semi_detached
+    construction_period: y1971_1990
+    heated_floor_area_m2: 125.0
+    storeys: 2
+    glazing: double_low_e
+    roof_insulation: medium
+  calls: 1
+- name: vague
+  message: "An old house in Gent, cold in winter."
+  outputs:
+    - '{"facts": [{"field": "municipality", "value": "Gent", "scenario": "baseline", "evidence": "in Gent", "confidence": "high"}], "user_says_complete": false}'
+  expected:
+    municipality: Gent
+  calls: 1
+- name: mixed_renovation
+  message: "The walls are not insulated, we plan to add 12 cm of EPS next year."
+  outputs:
+    - '{"facts": [{"field": "wall_insulation", "value": "none", "scenario": "baseline", "evidence": "The walls are not insulated", "confidence": "high"}, {"field": "wall_insulation", "value": "12 cm", "scenario": "renovation", "evidence": "we plan to add 12 cm of EPS next year", "confidence": "high"}], "user_says_complete": false}'
+  expected:
+    wall_insulation: none
+  renovation:
+    wall_insulation: good
+  calls: 1
+- name: dutch
+  message: "Een rijwoning van 1962, ongeveer 110 m2, dubbel glas. Dat is alles."
+  outputs:
+    - '{"facts": [{"field": "building_type", "value": "rijwoning", "scenario": "baseline", "evidence": "Een rijwoning", "confidence": "high"}, {"field": "construction_period", "value": "1962", "scenario": "baseline", "evidence": "van 1962", "confidence": "high"}, {"field": "heated_floor_area_m2", "value": "110 m2", "scenario": "baseline", "evidence": "ongeveer 110 m2", "confidence": "medium"}, {"field": "glazing", "value": "dubbel glas", "scenario": "baseline", "evidence": "dubbel glas", "confidence": "high"}], "user_says_complete": true}'
+  expected:
+    building_type: terraced
+    construction_period: y1946_1970
+    heated_floor_area_m2: 110.0
+    glazing: double_old
+  complete: true
+  calls: 1
+- name: invalid_json_then_valid
+  message: "120 m2"
+  last_question: "What is the heated floor area?"
+  outputs:
+    - '{"facts": [{"field": "heated_floor_area_m2", "value": "120 m2", "scenario": "baseline"'
+    - '{"facts": [{"field": "heated_floor_area_m2", "value": "120 m2", "scenario": "baseline", "evidence": "120 m2", "confidence": "high"}], "user_says_complete": false}'
+  expected:
+    heated_floor_area_m2: 120.0
+  calls: 2
+- name: bad_value_fixed_on_retry
+  message: "It faces the north-east, the street side I mean, and it's 2 storeys."
+  outputs:
+    - '{"facts": [{"field": "street_facade_orientation", "value": "north-east", "scenario": "baseline", "evidence": "It faces the north-east", "confidence": "high"}, {"field": "storeys", "value": "2", "scenario": "baseline", "evidence": "2 storeys", "confidence": "high"}], "user_says_complete": false}'
+    - '{"facts": [{"field": "storeys", "value": "2", "scenario": "baseline", "evidence": "2 storeys", "confidence": "high"}], "user_says_complete": false}'
+  expected:
+    storeys: 2
+  calls: 2
+- name: unknown_field_twice_gives_up
+  message: "We have a pool."
+  outputs:
+    - '{"facts": [{"field": "swimming_pool", "value": "yes", "scenario": "baseline", "evidence": "We have a pool", "confidence": "high"}], "user_says_complete": false}'
+    - '{"facts": [{"field": "pool", "value": "yes", "scenario": "baseline", "evidence": "pool", "confidence": "high"}], "user_says_complete": false}'
+  expected: {}
+  gave_up: true
+  calls: 2
+- name: dont_know_number_is_dropped
+  message: "No idea about the area, but the windows are triple glazed."
+  outputs:
+    - '{"facts": [{"field": "heated_floor_area_m2", "value": "no idea", "scenario": "baseline", "evidence": "No idea about the area", "confidence": "low"}, {"field": "glazing", "value": "triple", "scenario": "baseline", "evidence": "the windows are triple glazed", "confidence": "high"}], "user_says_complete": false}'
+  expected:
+    glazing: triple
+  calls: 1

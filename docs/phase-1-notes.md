@@ -81,3 +81,18 @@ message, so the system prefix is byte-identical across turns and llama.cpp skips
 measured 2.4 s to 0.12 s for a cached 2k prefix). The three calls differ in sampling: extraction is near-greedy
 with thinking off, the reply uses Qwen's non-thinking sampling, the interpretation may think. Every call is
 streamed internally and logs model, prompt version, tokens, TTFT and latency on one line.
+
+## Step 1.6 Extraction
+
+Extraction turns free text into slot values with structured output (#21): `response_format: json_schema`
+makes llama.cpp compile the schema into a grammar so the model can only emit valid JSON with allowed field
+names (#22 constrained decoding). The schema is kept flat and `value` is always a string (#23): the grammar
+stays simple, and Python does what must be exact, parsing "1,290 sq ft", "jaren 60" or "HR++" with tested
+rules. Pydantic validates the output again, because constrained decoding guarantees shape, not sense: a value
+can still be out of range or invented (#35 argument hallucination). One retry shows the model its own errors;
+after that the turn's extraction is dropped and the planner simply asks again. Sampling is near-greedy
+(temperature 0.1, #7) and four few-shot examples show the vague, precise, mixed and correction cases (#28).
+Facts tagged `renovation` are kept apart for phase 2.
+
+The pipeline fixtures (`tests/fixtures/extraction.yaml`) are hand-written in the model's output format,
+because no LLM was available while building this step; the `llm` tests run 5 live sentences.
