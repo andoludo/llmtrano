@@ -1,0 +1,579 @@
+# serializer version: 1
+# name: test_yaml_snapshot[detached_old]
+  '''
+  material:
+  - id: BRICK_FACING:001
+    thermal_conductivity: 0.9
+    density: 1700.0
+    specific_heat_capacity: 840.0
+  - id: CAVITY_AIR_5CM:001
+    thermal_conductivity: 0.278
+    density: 1.2
+    specific_heat_capacity: 1006.0
+  - id: BRICK_INNER:001
+    thermal_conductivity: 0.7
+    density: 1600.0
+    specific_heat_capacity: 840.0
+  - id: PLASTER:001
+    thermal_conductivity: 0.5
+    density: 1300.0
+    specific_heat_capacity: 1000.0
+  - id: TIMBER:001
+    thermal_conductivity: 0.13
+    density: 500.0
+    specific_heat_capacity: 1600.0
+  - id: JOIST_AIR_10CM:001
+    thermal_conductivity: 0.625
+    density: 1.2
+    specific_heat_capacity: 1006.0
+  - id: GYPSUM_BOARD:001
+    thermal_conductivity: 0.25
+    density: 900.0
+    specific_heat_capacity: 1000.0
+  - id: CONCRETE:001
+    thermal_conductivity: 1.7
+    density: 2300.0
+    specific_heat_capacity: 1000.0
+  - id: SCREED:001
+    thermal_conductivity: 1.4
+    density: 2000.0
+    specific_heat_capacity: 1000.0
+  - id: TILE:001
+    thermal_conductivity: 1.3
+    density: 2300.0
+    specific_heat_capacity: 840.0
+  constructions:
+  - id: EXTERNAL_WALL_NONE:001
+    layers:
+    - material: BRICK_FACING:001
+      thickness: 0.09
+    - material: CAVITY_AIR_5CM:001
+      thickness: 0.05
+    - material: BRICK_INNER:001
+      thickness: 0.14
+    - material: PLASTER:001
+      thickness: 0.015
+  - id: ROOF_NONE:001
+    layers:
+    - material: TIMBER:001
+      thickness: 0.022
+    - material: JOIST_AIR_10CM:001
+      thickness: 0.1
+    - material: GYPSUM_BOARD:001
+      thickness: 0.015
+  - id: GROUND_FLOOR_NONE:001
+    layers:
+    - material: CONCRETE:001
+      thickness: 0.12
+    - material: SCREED:001
+      thickness: 0.06
+    - material: TILE:001
+      thickness: 0.01
+  glass_material:
+  - id: GLASS:001
+    thermal_conductivity: 1.0
+    density: 2500.0
+    specific_heat_capacity: 840.0
+    solar_transmittance:
+    - 0.83
+    solar_reflectance_outside_facing:
+    - 0.075
+    solar_reflectance_room_facing:
+    - 0.075
+    infrared_transmissivity: 0.0
+    infrared_absorptivity_outside_facing: 0.84
+    infrared_absorptivity_room_facing: 0.84
+  gas:
+  - id: AIR:001
+    thermal_conductivity: 0.0256
+    density: 1.23
+    specific_heat_capacity: 1006.0
+    longwave_emissivity: 0.0
+    shortwave_emissivity: 0.0
+  glazings:
+  - id: WINDOW_DOUBLE_OLD:001
+    u_value_frame: 2.2
+    layers:
+    - glass: GLASS:001
+      thickness: 0.004
+    - gas: AIR:001
+      thickness: 0.012
+    - glass: GLASS:001
+      thickness: 0.004
+  weather:
+    parameters:
+      path: Modelica.Utilities.Files.loadResource("modelica://IDEAS/Resources/weatherdata/BEL_VLG_Uccle.064470_TMYx.2007-2021.mos")
+  spaces:
+  - id: HOUSE:001
+    variant: infiltration
+    parameters:
+      floor_area: 140.0
+      average_room_height: 2.6
+      n50: 6.0
+    occupancy:
+      parameters:
+        occupancy: 3600*{7, 23}
+        heat_gain_if_occupied: 2/140
+    emissions:
+    - ideal_heating_cooling:
+        id: HEATING:001
+        parameters:
+          heating_setpoint_schedule: '[0, 289.15; 25200, 289.15; 25200, 294.15; 82800, 294.15; 82800, 289.15; 86400, 289.15]'
+          maximum_cooling_power: 0.0
+    external_boundaries:
+      external_walls:
+      - surface: 53.28
+        azimuth: 0.0
+        tilt: wall
+        construction: EXTERNAL_WALL_NONE:001
+      - surface: 35.52
+        azimuth: 1.5708
+        tilt: wall
+        construction: EXTERNAL_WALL_NONE:001
+      - surface: 53.28
+        azimuth: 3.1416
+        tilt: wall
+        construction: EXTERNAL_WALL_NONE:001
+      - surface: 35.52
+        azimuth: -1.5708
+        tilt: wall
+        construction: EXTERNAL_WALL_NONE:001
+      - surface: 70.0
+        azimuth: 0.0
+        tilt: ceiling
+        construction: ROOF_NONE:001
+      floor_on_grounds:
+      - surface: 70.0
+        construction: GROUND_FLOOR_NONE:001
+        perimeter: 34.16
+      windows:
+      - surface: 10.66
+        azimuth: 0.0
+        tilt: wall
+        construction: WINDOW_DOUBLE_OLD:001
+        frame_fraction: 0.25
+      - surface: 7.1
+        azimuth: 1.5708
+        tilt: wall
+        construction: WINDOW_DOUBLE_OLD:001
+        frame_fraction: 0.25
+      - surface: 10.66
+        azimuth: 3.1416
+        tilt: wall
+        construction: WINDOW_DOUBLE_OLD:001
+        frame_fraction: 0.25
+      - surface: 7.1
+        azimuth: -1.5708
+        tilt: wall
+        construction: WINDOW_DOUBLE_OLD:001
+        frame_fraction: 0.25
+  
+  '''
+# ---
+# name: test_yaml_snapshot[semi_detached_1980s]
+  '''
+  material:
+  - id: EPS:001
+    thermal_conductivity: 0.032
+    density: 20.0
+    specific_heat_capacity: 1450.0
+  - id: BRICK_FACING:001
+    thermal_conductivity: 0.9
+    density: 1700.0
+    specific_heat_capacity: 840.0
+  - id: CAVITY_AIR_5CM:001
+    thermal_conductivity: 0.278
+    density: 1.2
+    specific_heat_capacity: 1006.0
+  - id: BRICK_INNER:001
+    thermal_conductivity: 0.7
+    density: 1600.0
+    specific_heat_capacity: 840.0
+  - id: PLASTER:001
+    thermal_conductivity: 0.5
+    density: 1300.0
+    specific_heat_capacity: 1000.0
+  - id: MINERAL_WOOL:001
+    thermal_conductivity: 0.035
+    density: 30.0
+    specific_heat_capacity: 1030.0
+  - id: TIMBER:001
+    thermal_conductivity: 0.13
+    density: 500.0
+    specific_heat_capacity: 1600.0
+  - id: JOIST_AIR_10CM:001
+    thermal_conductivity: 0.625
+    density: 1.2
+    specific_heat_capacity: 1006.0
+  - id: GYPSUM_BOARD:001
+    thermal_conductivity: 0.25
+    density: 900.0
+    specific_heat_capacity: 1000.0
+  - id: CONCRETE:001
+    thermal_conductivity: 1.7
+    density: 2300.0
+    specific_heat_capacity: 1000.0
+  - id: PUR:001
+    thermal_conductivity: 0.023
+    density: 35.0
+    specific_heat_capacity: 1400.0
+  - id: SCREED:001
+    thermal_conductivity: 1.4
+    density: 2000.0
+    specific_heat_capacity: 1000.0
+  - id: TILE:001
+    thermal_conductivity: 1.3
+    density: 2300.0
+    specific_heat_capacity: 840.0
+  constructions:
+  - id: EXTERNAL_WALL_THIN:001
+    layers:
+    - material: EPS:001
+      thickness: 0.04
+    - material: BRICK_FACING:001
+      thickness: 0.09
+    - material: CAVITY_AIR_5CM:001
+      thickness: 0.05
+    - material: BRICK_INNER:001
+      thickness: 0.14
+    - material: PLASTER:001
+      thickness: 0.015
+  - id: ROOF_THIN:001
+    layers:
+    - material: MINERAL_WOOL:001
+      thickness: 0.06
+    - material: TIMBER:001
+      thickness: 0.022
+    - material: JOIST_AIR_10CM:001
+      thickness: 0.1
+    - material: GYPSUM_BOARD:001
+      thickness: 0.015
+  - id: GROUND_FLOOR_THIN:001
+    layers:
+    - material: CONCRETE:001
+      thickness: 0.12
+    - material: PUR:001
+      thickness: 0.03
+    - material: SCREED:001
+      thickness: 0.06
+    - material: TILE:001
+      thickness: 0.01
+  - id: PARTY_WALL:001
+    layers:
+    - material: BRICK_INNER:001
+      thickness: 0.095
+    - material: PLASTER:001
+      thickness: 0.015
+  glass_material:
+  - id: GLASS:001
+    thermal_conductivity: 1.0
+    density: 2500.0
+    specific_heat_capacity: 840.0
+    solar_transmittance:
+    - 0.83
+    solar_reflectance_outside_facing:
+    - 0.075
+    solar_reflectance_room_facing:
+    - 0.075
+    infrared_transmissivity: 0.0
+    infrared_absorptivity_outside_facing: 0.84
+    infrared_absorptivity_room_facing: 0.84
+  gas:
+  - id: AIR:001
+    thermal_conductivity: 0.0256
+    density: 1.23
+    specific_heat_capacity: 1006.0
+    longwave_emissivity: 0.0
+    shortwave_emissivity: 0.0
+  glazings:
+  - id: WINDOW_DOUBLE_OLD:001
+    u_value_frame: 2.2
+    layers:
+    - glass: GLASS:001
+      thickness: 0.004
+    - gas: AIR:001
+      thickness: 0.012
+    - glass: GLASS:001
+      thickness: 0.004
+  weather:
+    parameters:
+      path: Modelica.Utilities.Files.loadResource("modelica://IDEAS/Resources/weatherdata/BEL_VLG_Uccle.064470_TMYx.2007-2021.mos")
+  spaces:
+  - id: HOUSE:001
+    variant: infiltration
+    parameters:
+      floor_area: 120.0
+      average_room_height: 2.6
+      n50: 6.0
+    occupancy:
+      parameters:
+        occupancy: 3600*{7, 23}
+        heat_gain_if_occupied: 2/120
+    emissions:
+    - ideal_heating_cooling:
+        id: HEATING:001
+        parameters:
+          heating_setpoint_schedule: '[0, 290.15; 25200, 290.15; 25200, 293.15; 82800, 293.15; 82800, 290.15; 86400, 290.15]'
+          maximum_cooling_power: 0.0
+    external_boundaries:
+      external_walls:
+      - surface: 49.33
+        azimuth: 3.1416
+        tilt: wall
+        construction: EXTERNAL_WALL_THIN:001
+      - surface: 49.33
+        azimuth: 0.0
+        tilt: wall
+        construction: EXTERNAL_WALL_THIN:001
+      - surface: 32.89
+        azimuth: 1.5708
+        tilt: wall
+        construction: EXTERNAL_WALL_THIN:001
+      - surface: 60.0
+        azimuth: 0.0
+        tilt: ceiling
+        construction: ROOF_THIN:001
+      floor_on_grounds:
+      - surface: 60.0
+        construction: GROUND_FLOOR_THIN:001
+        perimeter: 25.3
+      windows:
+      - surface: 9.87
+        azimuth: 3.1416
+        tilt: wall
+        construction: WINDOW_DOUBLE_OLD:001
+        frame_fraction: 0.25
+      - surface: 9.87
+        azimuth: 0.0
+        tilt: wall
+        construction: WINDOW_DOUBLE_OLD:001
+        frame_fraction: 0.25
+      - surface: 6.58
+        azimuth: 1.5708
+        tilt: wall
+        construction: WINDOW_DOUBLE_OLD:001
+        frame_fraction: 0.25
+      adiabatic_walls:
+      - surface: 32.89
+        azimuth: -1.5708
+        tilt: wall
+        construction: PARTY_WALL:001
+  
+  '''
+# ---
+# name: test_yaml_snapshot[terraced_renovated]
+  '''
+  material:
+  - id: EPS:001
+    thermal_conductivity: 0.032
+    density: 20.0
+    specific_heat_capacity: 1450.0
+  - id: BRICK_FACING:001
+    thermal_conductivity: 0.9
+    density: 1700.0
+    specific_heat_capacity: 840.0
+  - id: CAVITY_AIR_5CM:001
+    thermal_conductivity: 0.278
+    density: 1.2
+    specific_heat_capacity: 1006.0
+  - id: BRICK_INNER:001
+    thermal_conductivity: 0.7
+    density: 1600.0
+    specific_heat_capacity: 840.0
+  - id: PLASTER:001
+    thermal_conductivity: 0.5
+    density: 1300.0
+    specific_heat_capacity: 1000.0
+  - id: MINERAL_WOOL:001
+    thermal_conductivity: 0.035
+    density: 30.0
+    specific_heat_capacity: 1030.0
+  - id: TIMBER:001
+    thermal_conductivity: 0.13
+    density: 500.0
+    specific_heat_capacity: 1600.0
+  - id: JOIST_AIR_10CM:001
+    thermal_conductivity: 0.625
+    density: 1.2
+    specific_heat_capacity: 1006.0
+  - id: GYPSUM_BOARD:001
+    thermal_conductivity: 0.25
+    density: 900.0
+    specific_heat_capacity: 1000.0
+  - id: CONCRETE:001
+    thermal_conductivity: 1.7
+    density: 2300.0
+    specific_heat_capacity: 1000.0
+  - id: PUR:001
+    thermal_conductivity: 0.023
+    density: 35.0
+    specific_heat_capacity: 1400.0
+  - id: SCREED:001
+    thermal_conductivity: 1.4
+    density: 2000.0
+    specific_heat_capacity: 1000.0
+  - id: TILE:001
+    thermal_conductivity: 1.3
+    density: 2300.0
+    specific_heat_capacity: 840.0
+  constructions:
+  - id: EXTERNAL_WALL_GOOD:001
+    layers:
+    - material: EPS:001
+      thickness: 0.12
+    - material: BRICK_FACING:001
+      thickness: 0.09
+    - material: CAVITY_AIR_5CM:001
+      thickness: 0.05
+    - material: BRICK_INNER:001
+      thickness: 0.14
+    - material: PLASTER:001
+      thickness: 0.015
+  - id: ROOF_GOOD:001
+    layers:
+    - material: MINERAL_WOOL:001
+      thickness: 0.22
+    - material: TIMBER:001
+      thickness: 0.022
+    - material: JOIST_AIR_10CM:001
+      thickness: 0.1
+    - material: GYPSUM_BOARD:001
+      thickness: 0.015
+  - id: GROUND_FLOOR_MEDIUM:001
+    layers:
+    - material: CONCRETE:001
+      thickness: 0.12
+    - material: PUR:001
+      thickness: 0.05
+    - material: SCREED:001
+      thickness: 0.06
+    - material: TILE:001
+      thickness: 0.01
+  - id: PARTY_WALL:001
+    layers:
+    - material: BRICK_INNER:001
+      thickness: 0.095
+    - material: PLASTER:001
+      thickness: 0.015
+  glass_material:
+  - id: GLASS_LOWE_ROOM_SIDE:001
+    thermal_conductivity: 1.0
+    density: 2500.0
+    specific_heat_capacity: 840.0
+    solar_transmittance:
+    - 0.62
+    solar_reflectance_outside_facing:
+    - 0.2
+    solar_reflectance_room_facing:
+    - 0.2
+    infrared_transmissivity: 0.0
+    infrared_absorptivity_outside_facing: 0.84
+    infrared_absorptivity_room_facing: 0.04
+  - id: GLASS:001
+    thermal_conductivity: 1.0
+    density: 2500.0
+    specific_heat_capacity: 840.0
+    solar_transmittance:
+    - 0.83
+    solar_reflectance_outside_facing:
+    - 0.075
+    solar_reflectance_room_facing:
+    - 0.075
+    infrared_transmissivity: 0.0
+    infrared_absorptivity_outside_facing: 0.84
+    infrared_absorptivity_room_facing: 0.84
+  - id: GLASS_LOWE_OUTSIDE_SIDE:001
+    thermal_conductivity: 1.0
+    density: 2500.0
+    specific_heat_capacity: 840.0
+    solar_transmittance:
+    - 0.62
+    solar_reflectance_outside_facing:
+    - 0.2
+    solar_reflectance_room_facing:
+    - 0.2
+    infrared_transmissivity: 0.0
+    infrared_absorptivity_outside_facing: 0.04
+    infrared_absorptivity_room_facing: 0.84
+  gas:
+  - id: ARGON:001
+    thermal_conductivity: 0.0168
+    density: 1.7
+    specific_heat_capacity: 519.0
+    longwave_emissivity: 0.0
+    shortwave_emissivity: 0.0
+  glazings:
+  - id: WINDOW_TRIPLE:001
+    u_value_frame: 1.1
+    layers:
+    - glass: GLASS_LOWE_ROOM_SIDE:001
+      thickness: 0.004
+    - gas: ARGON:001
+      thickness: 0.012
+    - glass: GLASS:001
+      thickness: 0.004
+    - gas: ARGON:001
+      thickness: 0.012
+    - glass: GLASS_LOWE_OUTSIDE_SIDE:001
+      thickness: 0.004
+  weather:
+    parameters:
+      path: Modelica.Utilities.Files.loadResource("modelica://IDEAS/Resources/weatherdata/BEL_VLG_Uccle.064470_TMYx.2007-2021.mos")
+  spaces:
+  - id: HOUSE:001
+    variant: infiltration
+    parameters:
+      floor_area: 110.0
+      average_room_height: 2.7
+      n50: 3.0
+    occupancy:
+      parameters:
+        occupancy: 3600*{7, 23}
+        heat_gain_if_occupied: 4/110
+    emissions:
+    - ideal_heating_cooling:
+        id: HEATING:001
+        parameters:
+          heating_setpoint_schedule: '[0, 289.15; 25200, 289.15; 25200, 294.15; 82800, 294.15; 82800, 289.15; 86400, 289.15]'
+          maximum_cooling_power: 0.0
+    external_boundaries:
+      external_walls:
+      - surface: 49.05
+        azimuth: -1.5708
+        tilt: wall
+        construction: EXTERNAL_WALL_GOOD:001
+      - surface: 49.05
+        azimuth: 1.5708
+        tilt: wall
+        construction: EXTERNAL_WALL_GOOD:001
+      - surface: 55.0
+        azimuth: 0.0
+        tilt: ceiling
+        construction: ROOF_GOOD:001
+      floor_on_grounds:
+      - surface: 55.0
+        construction: GROUND_FLOOR_MEDIUM:001
+        perimeter: 18.17
+      windows:
+      - surface: 9.81
+        azimuth: -1.5708
+        tilt: wall
+        construction: WINDOW_TRIPLE:001
+        frame_fraction: 0.25
+      - surface: 9.81
+        azimuth: 1.5708
+        tilt: wall
+        construction: WINDOW_TRIPLE:001
+        frame_fraction: 0.25
+      adiabatic_walls:
+      - surface: 32.7
+        azimuth: 0.0
+        tilt: wall
+        construction: PARTY_WALL:001
+      - surface: 32.7
+        azimuth: 3.1416
+        tilt: wall
+        construction: PARTY_WALL:001
+  
+  '''
+# ---

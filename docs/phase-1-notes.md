@@ -55,3 +55,18 @@ on purpose and each one is listed as an assumption: a 1.5 rectangle with its lon
 facade areas from storeys times room height, one window per exposed facade from the window-to-wall ratio, and
 party walls replacing one or both short sides. The output is a typed `Geometry` model, so the YAML step only
 formats numbers that have been checked (positive areas, windows smaller than their wall).
+
+## Step 1.4 The compiler and its validation
+
+`compile_brief` is the only place that writes trano YAML (#22: the LLM never writes it, so a wrong key or a
+made-up id cannot reach OpenModelica). It applies the defaults, builds the geometry, picks the constructions
+of the levels in the Brief and writes one space `HOUSE:001` with infiltration, occupancy, an ideal heater with
+cooling off and the Uccle weather, mirroring `first_model.yaml`. Every id comes from the compiler, and the
+model carries the list of assumptions and the sha256 of the trano schema it was written against (#25
+validation: the worker's `check_yaml` is the second gate, its readable errors are stored on the run). Snapshot
+tests freeze the YAML of three fixture houses; unit tests also run trano's schema check and its Modelica
+generation without OpenModelica, and a `simulation` test runs `check_yaml` on all three.
+
+Occupants: trano's occupancy model multiplies `heat_gain_if_occupied` (occupants per m2) by 35 W radiant,
+70 W convective and 30 W latent per person (`SimpleOccupancy` in trano's `Trano.jinja2`), so the compiler
+writes `occupants / floor area`.
