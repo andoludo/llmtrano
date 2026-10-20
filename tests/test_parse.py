@@ -100,6 +100,8 @@ CASES: list[tuple[str, str, Any]] = [
     ("wall_insulation", "not insulated", InsulationLevel.none),
     ("wall_insulation", "geen isolatie", InsulationLevel.none),
     ("wall_insulation", "4 cm", InsulationLevel.thin),
+    ("wall_insulation", "a few centimetres of insulation", InsulationLevel.thin),
+    ("roof_insulation", "een paar centimeter", InsulationLevel.thin),
     ("wall_insulation", "8 cm EPS", InsulationLevel.medium),
     ("wall_insulation", "12cm", InsulationLevel.good),
     ("wall_insulation", "well insulated", InsulationLevel.good),

@@ -1,0 +1,6 @@
+id: apartment
+note: apartments are not supported in phase 1; the reply must say so and no model is compiled
+opening: "I live in an apartment on the third floor, 85 m2, built in 1970."
+outcome: unsupported
+expected:
+  building_type: apartment

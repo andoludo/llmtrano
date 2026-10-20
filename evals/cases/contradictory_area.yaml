@@ -1,0 +1,18 @@
+id: contradictory_area
+note: two areas in one message; the planner should ask which is right
+opening: >-
+  Our detached house from 1990 has 150 m2 of living space, although the plans say 170 m2 in total, over two
+  floors.
+answers:
+  heated_floor_area_m2: "Take 170 m2, from the plans."
+  wall_insulation: "Medium, about 8 cm."
+  glazing: "Old double glazing."
+  roof_insulation: "About 12 cm."
+expected:
+  building_type: detached
+  construction_period: y1971_1990
+  heated_floor_area_m2: 170
+  storeys: 2
+  wall_insulation: medium
+  glazing: double_old
+  roof_insulation: medium

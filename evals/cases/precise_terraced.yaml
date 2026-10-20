@@ -1,0 +1,22 @@
+id: precise_terraced
+opening: >-
+  Terraced house built in 1998 in Leuven, 115 m2 on two floors, rooms 2.6 m high. Cavity walls with 6 cm of
+  insulation, 12 cm of mineral wool in the roof, the floor is not insulated, HR++ glazing, and the house is
+  fairly airtight. We heat to 20 degrees from 6 to 22 and 16 at night. Four people live here.
+expected:
+  building_type: terraced
+  construction_period: y1991_2005
+  heated_floor_area_m2: 115
+  storeys: 2
+  room_height_m: 2.6
+  wall_insulation: medium
+  roof_insulation: medium
+  floor_insulation: none
+  glazing: double_low_e
+  airtightness: tight
+  heating_setpoint_day_c: 20
+  heating_setpoint_night_c: 16
+  day_start_h: 6
+  day_end_h: 22
+  occupants: 4
+  municipality: Leuven

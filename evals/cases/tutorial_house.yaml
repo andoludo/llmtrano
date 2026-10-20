@@ -1,0 +1,26 @@
+# Phase 1 gate: trano's tutorial house (tests/tutorials/first_model.yaml) in plain words. The tutorial gives
+# no construction year; the scripted user answers 2010 when asked (the Brief requires a period).
+id: tutorial_house
+gate: true
+opening: >-
+  It is a detached single-storey house of 100 m2, 12.5 by 8 metres, with rooms 2.5 m high. The walls are
+  brick with 12 cm of insulation, the flat roof has 16 cm of insulation and the floor slab 8 cm. The windows
+  are double glazing with argon, a big one to the south and a small one to the north. We heat to 21 degrees
+  from 7 in the morning to 11 in the evening and 18 degrees at night.
+answers:
+  construction_period: "It was built around 2010."
+  airtightness: "I don't know."
+expected:
+  building_type: detached
+  heated_floor_area_m2: 100
+  storeys: 1
+  room_height_m: 2.5
+  wall_insulation: good
+  roof_insulation: medium
+  floor_insulation: good
+  glazing: double_low_e
+  heating_setpoint_day_c: 21
+  heating_setpoint_night_c: 18
+  day_start_h: 7
+  day_end_h: 23
+  construction_period: y2006_2020

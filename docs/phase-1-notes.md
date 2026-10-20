@@ -164,3 +164,14 @@ relays its custom events as SSE (#62 streaming), then sends the card, the questi
 talks only to the api; it shows the card with "you said" or "assumed" badges and the user's words on hover,
 enables Confirm only when the Brief is ready, and draws the KPI table itself, so the numbers on screen never
 depend on the LLM.
+
+## Step 1.14 Eval set v0 and the gate
+
+The eval set (#54 offline evaluation) is ten golden cases (#55): the tutorial house (the gate), a vague
+1960s semi-detached house, a precise terraced house, a mixed baseline and renovation description, a
+correction, two Dutch descriptions, an apartment, a contradictory area and unusual units. Each case has a
+scripted user that answers the planner's questions by field, so a run tests the whole agent loop (#56 agent
+tests), not one prompt: extraction, merge, plan, the confirmation, the simulation and the guardrail. The
+runner writes one JSON per run (date and model in the name) and a Markdown summary with the seven metrics;
+comparing two runs is the eval gate (#58) for a prompt or model change. The runner itself is unit-tested
+with a fake LLM; the live run needs the GPU stack.
