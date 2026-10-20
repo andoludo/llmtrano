@@ -70,3 +70,14 @@ generation without OpenModelica, and a `simulation` test runs `check_yaml` on al
 Occupants: trano's occupancy model multiplies `heat_gain_if_occupied` (occupants per m2) by 35 W radiant,
 70 W convective and 30 W latent per person (`SimpleOccupancy` in trano's `Trano.jinja2`), so the compiler
 writes `occupants / floor area`.
+
+## Step 1.5 LLM client and prompt files
+
+Prompts are files, not strings in code, so each has a version (the first 8 hex characters of its sha256)
+that is stored with every message and lets an eval result be traced to the exact prompt (#61). The system
+message is assembled in a fixed order, static first: rules, field descriptions generated from the Brief's JSON
+Schema, few-shot examples (#27, #29). The dynamic part (state summary, last message) is always the final user
+message, so the system prefix is byte-identical across turns and llama.cpp skips its prefill (#16; phase 0
+measured 2.4 s to 0.12 s for a cached 2k prefix). The three calls differ in sampling: extraction is near-greedy
+with thinking off, the reply uses Qwen's non-thinking sampling, the interpretation may think. Every call is
+streamed internally and logs model, prompt version, tokens, TTFT and latency on one line.
