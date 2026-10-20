@@ -31,7 +31,7 @@ from llmtrano.brief.model import Fact, FieldProvenance, HouseBrief
 from llmtrano.brief.parse import ParseError, parse_value
 from llmtrano.brief.plan import Option, Question, next_questions, ready_to_confirm
 from llmtrano.compiler.compile import BriefNotReadyError, CompiledModel, compile_brief
-from llmtrano.guardrails.numbers import check_numbers, fallback_text, retry_note
+from llmtrano.guardrails.numbers import GuardrailResult, check_numbers, fallback_text, retry_note
 from llmtrano.llm import calls
 from llmtrano.llm.extraction import extraction_input, run_extraction
 from llmtrano.llm.reply import detect_language, interpret_input, respond_input
@@ -299,6 +299,8 @@ def build_graph(
                 _emit("token", text=piece, stream="interpretation", attempt=attempt)
             message_id = await recorder.message(state.session_id, "assistant", streamed.text, streamed.stats)
             result = check_numbers(streamed.text, state.kpis, brief_values)
+            if not streamed.text.strip():  # e.g. the thinking used the whole token budget
+                result = GuardrailResult(passed=False, wrong=["(no text)"])
             if result.passed:
                 text = streamed.text
                 report.passed_first_time = attempt == 1

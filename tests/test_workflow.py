@@ -195,6 +195,14 @@ async def test_guardrail_retry_that_passes(harness: Harness) -> None:
     assert not result["guardrail"].passed_first_time and not result["guardrail"].fallback_used
 
 
+async def test_empty_interpretation_counts_as_a_failure(harness: Harness) -> None:
+    await _intake_to_confirm(harness)
+    harness.llm.queue("interpret", "", "It needs 6469 kWh.")
+    result = await harness.resume({"approved": True})
+    assert result["guardrail"].wrong_first == ["(no text)"]
+    assert result["explanation"] == "It needs 6469 kWh."
+
+
 async def test_simulation_failure_is_explained(harness: Harness) -> None:
     harness.jobs.simulate_ok = False
     await _intake_to_confirm(harness)
