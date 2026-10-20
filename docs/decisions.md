@@ -249,3 +249,35 @@ ADR-style log. Newest entries at the bottom. Each entry: date, decision, why, al
   name.
 - **Alternatives**: keep the git pin on `master` (no reason now that releases exist); keep importing the
   `trano.simulate` aliases (works, but trano marks them as compatibility only).
+
+## 2026-10-20 Phase 1 build decisions (steps 1.1 to 1.14)
+
+Decisions taken while building phase 1 without stopping at the checkpoints; those that need Ando are listed in
+`docs/phase-1-review.md`.
+
+- **Dependencies** (latest stable on PyPI on 2026-10-20, capped at the minor version where 0.x or fast-moving):
+  `langgraph>=1.2.16,<1.3`, `langgraph-checkpoint-postgres>=3.2.0,<3.3`, `psycopg-pool>=3.3.3,<4` (used directly
+  by the checkpointer pool), `redis>=5.3.1,<6` (pub/sub for run progress; arq 0.28 requires redis < 6); dev:
+  `syrupy>=6.1.1,<7`, `pytest-asyncio>=1.4.0,<2` (`asyncio_mode = "auto"`). arq's last release (0.28.0,
+  2026-04-16) is within the 12-month rule.
+- **The Brief in the state holds only user values**; defaults are applied for the card and at compile time, so a
+  later answer can still replace them.
+- **Heater sized at 1.4 times a simplified design heat loss** (EN 12831 at -8 degC, the rule of trano's
+  residential cases) instead of trano's default 1 MW: measured in docs/measurements.md.
+- **KPIs from the heater's `EHea` meter** (`llmtrano.kpi.compute`), trano's trapezoid kept for comparison; peak =
+  highest hourly mean power. The proper home of this is `trano.kpi`.
+- **Respond runs before the confirmation interrupt**, so the user is told the card is ready (the plan's graph
+  went straight from route to confirm, which would leave the chat without a reply).
+- **Answer buttons send a structured `{field, value}`** that skips the LLM; card edits override without a
+  conflict; a chat correction becomes a conflict that is asked back.
+- **Loop guard**: an optional field asked twice without an answer is not asked again (its default applies).
+- **Checkpointer**: `AsyncPostgresSaver` on a psycopg pool, msgpack allowlist of llmtrano's state types only.
+  Alembic ignores LangGraph's four checkpoint tables (`include_object` in `env.py`).
+- **Guardrail**: also accepts a number written in kW or MWh when 1000 times it matches; the assumption lines
+  count as known values; an empty interpretation counts as a failure.
+- **Eval runner drives the graph directly** (same deps as the api, no HTTP), so it measures the workflow and
+  the LLM, not uvicorn.
+- **Gradio**: a fixed pool of 2 x 7 answer buttons (Gradio cannot add components while streaming); one chat
+  bubble per message (`group_consecutive_messages=False`) so each answer has its own thumbs.
+- **trano issues found** (for trano, not blocking): the KPI trapezoid (above); pydantic serializer warnings from
+  numpy `float32` layout coordinates in `convert_network`; the dict default package name `model`; no `py.typed`.
