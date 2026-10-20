@@ -96,3 +96,15 @@ Facts tagged `renovation` are kept apart for phase 2.
 
 The pipeline fixtures (`tests/fixtures/extraction.yaml`) are hand-written in the model's output format,
 because no LLM was available while building this step; the `llm` tests run 5 live sentences.
+
+## Step 1.7 Merge and plan
+
+This is the workflow-over-agent choice (#39): the LLM does not decide what to ask, Python does, from a fixed
+priority list ordered by impact on the heating demand (conflicts, then building type, area, storeys, period,
+walls, glazing, roof, airtightness, floor, set points). Merging is slot filling (#31) with rules that are easy to
+test: a user value beats a default, a contradiction becomes a conflict that is asked back instead of silently
+overwritten, a low-confidence or unclear fact is applied and asked back, and renovation plans are kept for
+phase 2. Splitting a turn into extract, merge, plan, respond is task decomposition (#42): each part is small,
+deterministic where it can be, and testable alone. Two additions to the spec: answer buttons send a structured
+`{field, value}` that skips the LLM, and an optional field asked twice without an answer is not asked again,
+so a vague user cannot cause a loop.

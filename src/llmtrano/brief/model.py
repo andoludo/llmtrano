@@ -159,6 +159,22 @@ class FieldProvenance(BaseModel):
 
 
 Provenance = dict[str, FieldProvenance]
+Scenario = Literal["baseline", "renovation", "unclear"]
+BriefValue = str | int | float
+
+
+class Fact(BaseModel):
+    """One fact of a turn, as extracted, merged and stored (``facts`` table), with the model's raw text."""
+
+    model_config = ConfigDict(frozen=True)
+
+    field: BriefField
+    value: BriefValue
+    raw_value: str
+    scenario: Scenario
+    evidence: str
+    confidence: Confidence
+    turn: int
 
 
 def missing_required(brief: HouseBrief) -> list[str]:

@@ -9,22 +9,29 @@ given up and the planner asks again.
 import logging
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Any, Literal
+from typing import Any
 
 from openai import AsyncOpenAI
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from llmtrano.brief.model import BRIEF_FIELDS, BriefField, Confidence, HouseBrief, Provenance, Source
+from llmtrano.brief.model import (
+    BRIEF_FIELDS,
+    BriefField,
+    Confidence,
+    Fact,
+    HouseBrief,
+    Provenance,
+    Scenario,
+    Source,
+)
 from llmtrano.brief.parse import ParseError, parse_value
 from llmtrano.llm import calls
 from llmtrano.llm.calls import CallStats
 
 log = logging.getLogger(__name__)
 
-Scenario = Literal["baseline", "renovation", "unclear"]
 SCENARIOS: tuple[Scenario, ...] = ("baseline", "renovation", "unclear")
 CONFIDENCES: tuple[Confidence, ...] = ("low", "medium", "high")
-BriefValue = str | int | float
 
 
 def extraction_schema() -> dict[str, Any]:
@@ -64,20 +71,6 @@ class RawExtraction(BaseModel):
 
     facts: list[RawFact] = Field(max_length=30)
     user_says_complete: bool
-
-
-class Fact(BaseModel):
-    """A fact as stored (``facts`` table) and merged: the typed value plus what the model wrote."""
-
-    model_config = ConfigDict(frozen=True)
-
-    field: BriefField
-    value: BriefValue
-    raw_value: str
-    scenario: Scenario
-    evidence: str
-    confidence: Confidence
-    turn: int
 
 
 @dataclass(slots=True)
