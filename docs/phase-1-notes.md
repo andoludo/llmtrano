@@ -108,3 +108,13 @@ phase 2. Splitting a turn into extract, merge, plan, respond is task decompositi
 deterministic where it can be, and testable alone. Two additions to the spec: answer buttons send a structured
 `{field, value}` that skips the LLM, and an optional field asked twice without an answer is not asked again,
 so a vague user cannot cause a loop.
+
+## Step 1.8 Respond
+
+The reply is the only place where the model writes freely, and even there it only words decisions made by
+Python: the facts noted, the renovation plans, the planner's questions and whether the Brief is ready (#27
+system prompt with hard rules: at most four sentences, no numbers of its own, no advice before the
+simulation). It streams token by token to the ui (#62), with Qwen's non-thinking sampling. The answer buttons
+come from the planner's options, so a reply that words a question badly cannot change what can be answered.
+The reply language follows the user (English, Dutch or French, by a stop-word count kept in the state, so a
+one-word answer does not switch it).
