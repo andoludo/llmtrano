@@ -361,7 +361,8 @@ def build_ui(api: ApiClient, settings: Settings) -> gr.Blocks:
         with gr.Row():
             with gr.Column(scale=3):
                 model = gr.Dropdown(label="Model for the conversation", choices=[], interactive=True)
-                chatbot = gr.Chatbot(label="Chat", height=460)
+                # one bubble per message: each answer gets its own thumbs up or down
+                chatbot = gr.Chatbot(label="Chat", height=460, group_consecutive_messages=False)
                 titles, buttons = [], []
                 for _ in range(MAX_QUESTIONS):
                     titles.append(gr.Markdown(visible=False))
