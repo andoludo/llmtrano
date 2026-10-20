@@ -165,6 +165,15 @@ def test_merge_records_provenance_and_does_not_mutate() -> None:
     assert brief.storeys is None and provenance == {"storeys": DEFAULT}
 
 
+def test_card_edits_override_without_conflict() -> None:
+    brief, provenance = HouseBrief(heated_floor_area_m2=120.0), {"heated_floor_area_m2": user("120 m2")}
+    result = merge_facts(
+        brief, provenance, [], [fact("heated_floor_area_m2", 130.0)], overrides={"heated_floor_area_m2"}
+    )
+    assert result.brief.heated_floor_area_m2 == 130.0
+    assert result.conflicts == []
+
+
 def test_unclear_scenario_is_applied_with_low_confidence() -> None:
     result = merge_facts(HouseBrief(), {}, [], [fact("glazing", Glazing.triple, scenario="unclear")])
     assert result.brief.glazing is Glazing.triple

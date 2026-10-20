@@ -118,3 +118,15 @@ simulation). It streams token by token to the ui (#62), with Qwen's non-thinking
 come from the planner's options, so a reply that words a question badly cannot change what can be answered.
 The reply language follows the user (English, Dutch or French, by a stop-word count kept in the state, so a
 one-word answer does not switch it).
+
+## Step 1.9 The workflow (LangGraph)
+
+The graph is a workflow, not an agent (#38, #39): the edges are fixed in code and the LLM never chooses the
+next step. LangGraph (#40) gives the two things a plain loop would not: a checkpointer that saves the state
+after every node (Postgres, `thread_id = session_id`, so a session survives an api restart), and `interrupt()`,
+which stops the graph at the confirmation with the Brief card and resumes it with the user's decision (#41
+human in the loop: nothing is simulated before "approved"). A rejection goes back through merge and plan
+(card edits, which override without a conflict) or through extraction (a chat message). When the Brief is
+ready the reply still runs before the interrupt, so the user is told to check the card. Reply tokens and run
+progress are streamed with LangGraph's custom stream. The checkpointer deserializes only llmtrano's own state
+types (an explicit msgpack allowlist). `docs/workflow.md` is regenerated from the graph; a test fails when stale.

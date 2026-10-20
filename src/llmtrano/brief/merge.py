@@ -7,9 +7,11 @@ Rules:
 - low-confidence and ``unclear`` facts are applied and asked back for confirmation (the planner reads the
   provenance's confidence);
 - ``unknown`` never replaces a stated value;
-- renovation facts are kept apart, never applied to the baseline.
+- renovation facts are kept apart, never applied to the baseline;
+- an edit on the Brief card (``overrides``) is the user correcting a value: it replaces it, no conflict.
 """
 
+from collections.abc import Collection
 from dataclasses import dataclass, field
 from enum import StrEnum
 
@@ -59,7 +61,11 @@ def _brief_value(value: object) -> BriefValue:
 
 
 def merge_facts(
-    brief: HouseBrief, provenance: Provenance, conflicts: list[Conflict], facts: list[Fact]
+    brief: HouseBrief,
+    provenance: Provenance,
+    conflicts: list[Conflict],
+    facts: list[Fact],
+    overrides: Collection[str] = (),
 ) -> MergeResult:
     """The Brief with this turn's facts applied. Inputs are not changed."""
     values = brief.model_dump()
@@ -75,7 +81,7 @@ def merge_facts(
         stated = (
             said is not None and said.source is Source.user and current is not None and current not in UNKNOWN
         )
-        resolving = name in open_conflicts
+        resolving = name in open_conflicts or name in overrides
         if stated and fact.value in UNKNOWN:
             result.ignored.append(fact)
             continue
