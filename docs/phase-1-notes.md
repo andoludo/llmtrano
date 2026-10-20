@@ -46,3 +46,12 @@ U-values (W/m2K; `uv run pytest tests/test_constructions.py -k table -s`):
 | triple | 0.80 | 0.70 | 0.47 | 1.1 | after renovation |
 
 Uw uses trano's own glazing calculation (EN 673) and a frame fraction of 0.25, as in the reference cases.
+
+## Step 1.3 Geometry heuristics
+
+Users describe a house by floor area, storeys and a few words, never by wall areas, so the compiler needs a
+fixed way to turn those into surfaces (the plan's missing "geometry strategy" step, #24). The rules are simple
+on purpose and each one is listed as an assumption: a 1.5 rectangle with its long side on the street, gross
+facade areas from storeys times room height, one window per exposed facade from the window-to-wall ratio, and
+party walls replacing one or both short sides. The output is a typed `Geometry` model, so the YAML step only
+formats numbers that have been checked (positive areas, windows smaller than their wall).
