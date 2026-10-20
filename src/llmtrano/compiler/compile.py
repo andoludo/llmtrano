@@ -31,6 +31,7 @@ from llmtrano.compiler.constructions import (
 )
 from llmtrano.compiler.geometry import ASSUMPTIONS as GEOMETRY_ASSUMPTIONS
 from llmtrano.compiler.geometry import Surface, SurfaceKind, build_geometry
+from llmtrano.compiler.sizing import design_heat_loss_w, heating_capacity_w
 
 SPACE_ID = "HOUSE:001"
 HEATING_ID = "HEATING:001"
@@ -49,7 +50,8 @@ KELVIN = 273.15
 DAY_S = 86_400
 FIXED_ASSUMPTIONS = (
     "weather: Uccle typical year (TMYx 2007-2021) for every address",
-    "heating by an ideal heater with trano's default capacity; cooling off",
+    "heating by an ideal heater sized at 1.4 times the design heat loss at -8 degC, as trano's residential "
+    "cases; cooling off",
     "ground under the slab at trano's default temperature (10 degC, Buildings)",
     "occupant heat gains of trano (105 W sensible and 30 W latent per person) during the day hours",
     "airtightness: n50 12 (leaky), 6 (average, rule of thumb) or 3 (tight) 1/h",
@@ -119,6 +121,18 @@ def model_dict(brief: HouseBrief) -> dict[str, Any]:
     roof = construction(Element.roof, values["roof_insulation"])
     floor = construction(Element.floor, values["floor_insulation"])
     window = glazing(values["glazing"])
+    n50 = N50[values["airtightness"]]
+    capacity = heating_capacity_w(
+        design_heat_loss_w(
+            geometry,
+            wall=values["wall_insulation"],
+            roof=values["roof_insulation"],
+            floor=values["floor_insulation"],
+            glazing=values["glazing"],
+            n50=n50,
+            setpoint_c=values["heating_setpoint_day_c"],
+        )
+    )
     constructions = [wall, roof, floor, *([PARTY_WALL] if geometry.of(SurfaceKind.party_wall) else [])]
 
     material_ids = _unique(layer.material for c in constructions for layer in c.layers)
@@ -153,7 +167,7 @@ def model_dict(brief: HouseBrief) -> dict[str, Any]:
         "parameters": {
             "floor_area": floor_area,
             "average_room_height": float(values["room_height_m"]),
-            "n50": N50[values["airtightness"]],
+            "n50": n50,
         },
         "occupancy": {
             "parameters": {
@@ -172,7 +186,8 @@ def model_dict(brief: HouseBrief) -> dict[str, Any]:
                             values["day_start_h"],
                             values["day_end_h"],
                         ),
-                        "maximum_cooling_power": 0.0,  # cooling off; heating capacity stays trano's default
+                        "maximum_heating_power": capacity,
+                        "maximum_cooling_power": 0.0,  # cooling off
                     },
                 }
             }

@@ -119,6 +119,7 @@
         id: HEATING:001
         parameters:
           heating_setpoint_schedule: '[0, 289.15; 25200, 289.15; 25200, 294.15; 82800, 294.15; 82800, 289.15; 86400, 289.15]'
+          maximum_heating_power: 22500.0
           maximum_cooling_power: 0.0
     external_boundaries:
       external_walls:
@@ -314,6 +315,7 @@
         id: HEATING:001
         parameters:
           heating_setpoint_schedule: '[0, 290.15; 25200, 290.15; 25200, 293.15; 82800, 293.15; 82800, 290.15; 86400, 290.15]'
+          maximum_heating_power: 8000.0
           maximum_cooling_power: 0.0
     external_boundaries:
       external_walls:
@@ -535,6 +537,7 @@
         id: HEATING:001
         parameters:
           heating_setpoint_schedule: '[0, 289.15; 25200, 289.15; 25200, 294.15; 82800, 294.15; 82800, 289.15; 86400, 289.15]'
+          maximum_heating_power: 3000.0
           maximum_cooling_power: 0.0
     external_boundaries:
       external_walls:

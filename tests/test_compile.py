@@ -183,3 +183,14 @@ def test_fixture_models_pass_check_yaml(name: str, tmp_path: Path) -> None:
     compiled = compile_brief(FIXTURES[name], {})
     result = check_yaml(compiled.model_dict, runtime="local", project_path=tmp_path, name=f"check_{name}")
     assert result.success, f"{result.error_kind}: {result.error_message}"
+
+
+def test_heater_is_sized_on_the_design_loss() -> None:
+    """1.4 times the design heat loss, in 500 W steps: more insulation, smaller heater."""
+    capacity = {
+        name: compile_brief(brief, {}).model_dict["spaces"][0]["emissions"][0]["ideal_heating_cooling"][
+            "parameters"
+        ]["maximum_heating_power"]
+        for name, brief in FIXTURES.items()
+    }
+    assert capacity == {"detached_old": 22500.0, "semi_detached_1980s": 8000.0, "terraced_renovated": 3000.0}
