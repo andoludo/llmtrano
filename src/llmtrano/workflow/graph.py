@@ -195,7 +195,8 @@ def build_graph(
         streamed = calls.respond(deps.llm, dynamic, model=interactive_model(state))
         async for piece in streamed:
             _emit("token", text=piece, stream="reply")
-        await recorder.message(state.session_id, "assistant", streamed.text, streamed.stats)
+        message_id = await recorder.message(state.session_id, "assistant", streamed.text, streamed.stats)
+        _emit("message", id=str(message_id) if message_id else None, stream="reply")
         return {
             "recent_messages": _recent(state, "assistant", streamed.text),
             "phase": Phase.confirm if state.ready else Phase.intake,
@@ -296,7 +297,7 @@ def build_graph(
             streamed = calls.interpret(deps.llm, dynamic, model=settings.llm_interpret_model, retry_note=note)
             async for piece in streamed:
                 _emit("token", text=piece, stream="interpretation", attempt=attempt)
-            await recorder.message(state.session_id, "assistant", streamed.text, streamed.stats)
+            message_id = await recorder.message(state.session_id, "assistant", streamed.text, streamed.stats)
             result = check_numbers(streamed.text, state.kpis, brief_values)
             if result.passed:
                 text = streamed.text
@@ -311,8 +312,8 @@ def build_graph(
                 text = fallback_text(state.kpis)
                 _emit("guardrail", action="fallback", wrong=result.wrong, text=text)
                 log.warning("guardrail fallback session=%s wrong=%r", state.session_id, result.wrong)
-                await recorder.message(state.session_id, "assistant", text)
-        _emit("explanation", text=text)
+                message_id = await recorder.message(state.session_id, "assistant", text)
+        _emit("explanation", text=text, message_id=str(message_id) if message_id else None)
         return {
             "explanation": text,
             "guardrail": report,
