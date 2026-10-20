@@ -1,0 +1,19 @@
+id: dutch_rijwoning
+language: Dutch
+opening: >-
+  Wij wonen in een rijwoning uit 1962 van ongeveer 110 m2 met twee verdiepingen. We hebben dubbel glas en de
+  muren zijn niet geïsoleerd.
+answers:
+  roof_insulation: "Er ligt een beetje isolatie op de zolder, een paar centimeter."
+  airtightness: "Het is nogal tochtig."
+  floor_insulation: "Weet ik niet."
+default_answer: "Weet ik niet."
+expected:
+  building_type: terraced
+  construction_period: y1946_1970
+  heated_floor_area_m2: 110
+  storeys: 2
+  glazing: double_old
+  wall_insulation: none
+  roof_insulation: thin
+  airtightness: leaky

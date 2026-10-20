@@ -216,3 +216,68 @@ ADR-style log. Newest entries at the bottom. Each entry: date, decision, why, al
   good enough; if not, revisit (MoE for extraction, or a better prompt or schema).
 - **Alternatives**: MoE for everything (no swaps, faster decode, better extraction in one test, but no RAM
   headroom next to a simulation on this laptop).
+
+## 2026-10-19 trano from PyPI, T6 to T8 checked (step 1.0)
+
+- **Decision**: depend on `trano>=0.56.0,<0.57` from PyPI instead of the git commit `4220d3c`. Capped at the
+  minor version because trano is 0.x and 0.56.0 itself moved code into a new package.
+- **Why**: T1 to T8 were merged into trano `master` (PR #55, which contains `4220d3c`) and every release from
+  0.54.0 has them, so the plan's "pinned commit until a release contains them" no longer applies. The branches
+  `feat/llmtrano-runtime` and `claude/gifted-maxwell-wna0b6` no longer exist. trano 0.56.0 (released
+  2026-10-19) moves simulation into `trano-simulate` 0.2.0 (PR #57): `trano.simulate.*` still works as an
+  alias, but llmtrano now imports `trano_simulate` (typed, ships `py.typed`) as trano advises, and the worker
+  image installs libraries with `python -m trano_simulate.install_libraries`. `git` left the worker image.
+  `trano_version()` now stores `0.56.0` (a PyPI install has no commit).
+- **Checked** (OpenModelica 1.26.9, Buildings 13.0.0, IDEAS 3.0.0, numbers in docs/measurements.md, step 1.0):
+  - T6: `on_phase` called with generating, compiling, simulating, done, in that order, for both libraries.
+  - T7: the variable names in `trano.kpi` were confirmed from real result files of `first_model.yaml` for
+    Buildings and for IDEAS (`Reader(path, "openmodelica").varNames(".*")`): `QHea_flow`, `TAir.T` and
+    `heaSch.y[1]` under `building.emission1.heating_001`, the same in both libraries.
+  - T8: a broken model gives one line per error with the YAML path and the field description.
+- **Found, to fix in trano** (not blocking phase 1, Ando decides):
+  - `trano.kpi` integrates `QHea_flow` with a trapezoid on the output grid. The heater's own `EHea` (an
+    integrator of `QHea_flow` in trano's `IdealHeatingCooling`) is exact. On the hourly grid the trapezoid
+    reads 1.5% high for a year (6,085 vs 5,996 kWh, Buildings; same for IDEAS) because the power spikes after
+    the morning set point step and decays within the hour. With a 1-minute grid both agree to 0.02%.
+    Proposed fix: energy = `EHea(end) - EHea(start)` when the variable exists, trapezoid otherwise.
+  - Still open from step 0.7b: the dict default package name `model` (llmtrano passes `name=`), no `py.typed`.
+- **Environment note**: the cloud sandbox where this was checked blocks `ghcr.io` blobs and
+  `libraries.openmodelica.org`, so the worker image could not be built there; the same steps ran in the pinned
+  OpenModelica image with the libraries cloned from their GitHub tags, and `ModelicaServices` patched the way
+  OpenModelica's `+maint.om` build does (`loadResource` through `OpenModelica.Scripting.uriToFilename`; without
+  it, `modelica://` weather paths do not resolve). On the laptop the Dockerfile is unchanged apart from the module
+  name.
+- **Alternatives**: keep the git pin on `master` (no reason now that releases exist); keep importing the
+  `trano.simulate` aliases (works, but trano marks them as compatibility only).
+
+## 2026-10-20 Phase 1 build decisions (steps 1.1 to 1.14)
+
+Decisions taken while building phase 1 without stopping at the checkpoints; those that need Ando are listed in
+`docs/phase-1-review.md`.
+
+- **Dependencies** (latest stable on PyPI on 2026-10-20, capped at the minor version where 0.x or fast-moving):
+  `langgraph>=1.2.16,<1.3`, `langgraph-checkpoint-postgres>=3.2.0,<3.3`, `psycopg-pool>=3.3.3,<4` (used directly
+  by the checkpointer pool), `redis>=5.3.1,<6` (pub/sub for run progress; arq 0.28 requires redis < 6); dev:
+  `syrupy>=6.1.1,<7`, `pytest-asyncio>=1.4.0,<2` (`asyncio_mode = "auto"`). arq's last release (0.28.0,
+  2026-04-16) is within the 12-month rule.
+- **The Brief in the state holds only user values**; defaults are applied for the card and at compile time, so a
+  later answer can still replace them.
+- **Heater sized at 1.4 times a simplified design heat loss** (EN 12831 at -8 degC, the rule of trano's
+  residential cases) instead of trano's default 1 MW: measured in docs/measurements.md.
+- **KPIs from the heater's `EHea` meter** (`llmtrano.kpi.compute`), trano's trapezoid kept for comparison; peak =
+  highest hourly mean power. The proper home of this is `trano.kpi`.
+- **Respond runs before the confirmation interrupt**, so the user is told the card is ready (the plan's graph
+  went straight from route to confirm, which would leave the chat without a reply).
+- **Answer buttons send a structured `{field, value}`** that skips the LLM; card edits override without a
+  conflict; a chat correction becomes a conflict that is asked back.
+- **Loop guard**: an optional field asked twice without an answer is not asked again (its default applies).
+- **Checkpointer**: `AsyncPostgresSaver` on a psycopg pool, msgpack allowlist of llmtrano's state types only.
+  Alembic ignores LangGraph's four checkpoint tables (`include_object` in `env.py`).
+- **Guardrail**: also accepts a number written in kW or MWh when 1000 times it matches; the assumption lines
+  count as known values; an empty interpretation counts as a failure.
+- **Eval runner drives the graph directly** (same deps as the api, no HTTP), so it measures the workflow and
+  the LLM, not uvicorn.
+- **Gradio**: a fixed pool of 2 x 7 answer buttons (Gradio cannot add components while streaming); one chat
+  bubble per message (`group_consecutive_messages=False`) so each answer has its own thumbs.
+- **trano issues found** (for trano, not blocking): the KPI trapezoid (above); pydantic serializer warnings from
+  numpy `float32` layout coordinates in `convert_network`; the dict default package name `model`; no `py.typed`.

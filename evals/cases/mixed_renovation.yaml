@@ -1,0 +1,17 @@
+id: mixed_renovation
+opening: >-
+  Detached house from 1975, 160 m2 over two storeys. The walls are not insulated yet, but next year we plan
+  to add 12 cm of external insulation, and we want to replace the old double glazing with triple glazing.
+answers:
+  roof_insulation: "The attic floor has about 10 cm of wool."
+expected:
+  building_type: detached
+  construction_period: y1971_1990
+  heated_floor_area_m2: 160
+  storeys: 2
+  wall_insulation: none
+  glazing: double_old
+  roof_insulation: medium
+renovation:
+  wall_insulation: good
+  glazing: triple

@@ -1,0 +1,18 @@
+id: unusual_units
+opening: >-
+  Detached bungalow built in 1979, about 1,300 square feet, with 8 ft ceilings. We keep it at 68 F during
+  the day.
+answers:
+  wall_insulation: "About 2 inches, so roughly 5 cm."
+  glazing: "Double glazing."
+  roof_insulation: "Six inches of fibreglass, about 15 cm."
+expected:
+  building_type: detached
+  construction_period: y1971_1990
+  heated_floor_area_m2: 120.8
+  storeys: 1
+  room_height_m: 2.44
+  heating_setpoint_day_c: 20
+  wall_insulation: thin
+  glazing: double_old
+  roof_insulation: medium

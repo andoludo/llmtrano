@@ -1,0 +1,22 @@
+id: dutch_vrijstaand
+language: Dutch
+opening: >-
+  Vrijstaande woning gebouwd in 2008, 180 m2 verdeeld over twee bouwlagen, met HR++ glas. De woning is
+  luchtdicht. We stoken op 21 graden overdag en 17 graden 's nachts.
+answers:
+  wall_insulation: "De muren hebben 10 cm isolatie."
+  roof_insulation: "Het dak heeft 20 cm isolatie."
+  floor_insulation: "De vloer heeft 6 cm isolatie."
+default_answer: "Weet ik niet."
+expected:
+  building_type: detached
+  construction_period: y2006_2020
+  heated_floor_area_m2: 180
+  storeys: 2
+  glazing: double_low_e
+  airtightness: tight
+  heating_setpoint_day_c: 21
+  heating_setpoint_night_c: 17
+  wall_insulation: good
+  roof_insulation: good
+  floor_insulation: medium

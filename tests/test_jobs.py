@@ -1,5 +1,6 @@
 """Worker and smoke logic without OpenModelica: trano's simulate_yaml is replaced by a fake."""
 
+import json
 import uuid
 from pathlib import Path
 from typing import Any
@@ -7,12 +8,20 @@ from typing import Any
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
-from trano.simulate.result import SimulationErrorKind, SimulationResult
+from trano_simulate.result import SimulationErrorKind, SimulationResult
 
-from llmtrano.db.models import Base, Run, RunStatus
+from llmtrano.db.models import Base, KpiRow, Run, RunStatus
 from llmtrano.jobs import worker
 from llmtrano.jobs.smoke import Outcome, phase_timings, report
 from llmtrano.settings import Settings
+
+
+class FakePublisher:
+    def __init__(self) -> None:
+        self.messages: list[tuple[str, str]] = []
+
+    def publish(self, channel: str, message: str) -> None:
+        self.messages.append((channel, message))
 
 
 @pytest.fixture
@@ -43,11 +52,21 @@ def test_execute_run_success(
 
     def fake_simulate_yaml(model: Any, **kwargs: Any) -> SimulationResult:
         calls.update(kwargs, model=model)
+        for phase in ("generating", "compiling", "simulating", "done"):
+            kwargs["on_phase"](phase)
         return SimulationResult(success=True, result_path=tmp_path / "r.mat", log="ok", duration_s=12.5)
 
+    def fake_kpis(project_path: Path, name: str, library: str, result_path: Path) -> dict[str, Any]:
+        calls["kpi"] = (project_path, name, library, result_path)
+        return {"heating_energy_kwh": 6000.0}
+
+    publisher = FakePublisher()
     monkeypatch.setattr(worker, "simulate_yaml", fake_simulate_yaml)
+    monkeypatch.setattr(worker, "compute_kpis", fake_kpis)
     run_id = _insert(sessions)
-    status = worker.execute_run(run_id, sessions, Settings(runs_dir=tmp_path, simulation_timeout_s=99))
+    status = worker.execute_run(
+        run_id, sessions, Settings(runs_dir=tmp_path, simulation_timeout_s=99), publisher
+    )
 
     assert status is RunStatus.SUCCEEDED
     assert calls["model"] == {"default": {}}
@@ -63,6 +82,18 @@ def test_execute_run_success(
         assert run.duration_s == 12.5
         assert run.result_path == str(tmp_path / "r.mat")
         assert run.trano_version
+        assert run.phase == "done"
+        assert session.get_one(KpiRow, run_id).values == {"heating_energy_kwh": 6000.0}
+    assert calls["kpi"] == (tmp_path / str(run_id), f"run_{run_id.hex[:8]}", "Buildings", tmp_path / "r.mat")
+    assert [json.loads(m)["phase"] for c, m in publisher.messages] == [
+        "generating",
+        "compiling",
+        "simulating",
+        "done",
+        "succeeded",
+    ]
+    assert {c for c, _ in publisher.messages} == {f"run:{run_id}"}
+    assert set(json.loads(publisher.messages[0][1])) == {"run_id", "phase", "t"}
 
 
 def test_execute_run_failure_is_recorded(
@@ -95,6 +126,50 @@ def test_execute_run_unexpected_error_marks_failed(
         run = session.get_one(Run, run_id)
         assert run.status is RunStatus.FAILED
         assert run.error_kind == "internal"
+
+
+def test_check_stores_readable_errors(
+    sessions: sessionmaker[Session], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    log = "Invalid model:\n- spaces[0].parameters.floor_area: must be >= 0 (got -5) (Floor area [m2])\n- x: y"
+
+    def fake_check_yaml(model: Any, **kwargs: Any) -> SimulationResult:
+        return SimulationResult.failure(SimulationErrorKind.validation, "one line", log=log)
+
+    monkeypatch.setattr(worker, "check_yaml", fake_check_yaml)
+    run_id = _insert(sessions)
+    assert worker.execute_check(run_id, sessions, Settings(runs_dir=tmp_path)) is RunStatus.FAILED
+    with sessions() as session:
+        run = session.get_one(Run, run_id)
+        assert run.errors == [
+            "spaces[0].parameters.floor_area: must be >= 0 (got -5) (Floor area [m2])",
+            "x: y",
+        ]
+        assert run.error_kind == "validation"
+
+
+def test_check_success(
+    sessions: sessionmaker[Session], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    seen: dict[str, Any] = {}
+
+    def fake_check_yaml(model: Any, **kwargs: Any) -> SimulationResult:
+        seen.update(kwargs)
+        return SimulationResult(
+            success=True, result_path=None, log="Check completed successfully", duration_s=3.0
+        )
+
+    monkeypatch.setattr(worker, "check_yaml", fake_check_yaml)
+    run_id = _insert(sessions)
+    assert worker.execute_check(run_id, sessions, Settings(runs_dir=tmp_path)) is RunStatus.SUCCEEDED
+    assert seen["runtime"] == "local" and seen["name"] == f"run_{run_id.hex[:8]}"
+    with sessions() as session:
+        assert session.get_one(Run, run_id).errors is None
+
+
+def test_readable_errors_fall_back_to_the_message() -> None:
+    result = SimulationResult.failure(SimulationErrorKind.solver, "diverged at t=3600", log="...")
+    assert worker.readable_errors(result) == ["diverged at t=3600"]
 
 
 def test_phase_timings_from_simulate_record() -> None:

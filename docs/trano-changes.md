@@ -7,6 +7,15 @@ installs trano from that branch (pinned commit) until a release contains them.
 Baseline read for this file: trano 0.52.0, commit `75eac5b` (15 Oct 2026). Re-check every
 file and line reference before editing; trano moves fast.
 
+**Status (19 Oct 2026, step 1.0)**: T1 to T8 are merged into trano `master` (PR #55) and released
+from trano 0.54.0 on; llmtrano depends on `trano>=0.56.0,<0.57` from PyPI. Since 0.56.0 the
+simulation code (T1 to T4, and the result types) lives in the separate package `trano-simulate`
+(PR #57); `trano.api`, `trano.kpi` and the readable errors (T8) stay in trano, and the old
+`trano.simulate.*` imports are kept as aliases. New llmtrano code imports `trano_simulate`.
+Open items found while checking (see `docs/decisions.md`, step 1.0): the dict default package
+name `model` is still a Modelica keyword, trano has no `py.typed`, and `trano.kpi` integrates the
+heating power on the output grid, which reads 1.5% high on an hourly grid.
+
 Why these changes: today `trano.simulate.simulate()` starts a sibling OpenModelica container
 through the Docker socket, hard-codes the container path `/simulation`, reuses one container
 name, installs Modelica libraries at every start and returns a raw Docker `ExecResult`. That is

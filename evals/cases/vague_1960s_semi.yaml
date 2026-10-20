@@ -1,0 +1,15 @@
+id: vague_1960s_semi
+opening: "We have a semi-detached house from the sixties. It is quite cold in winter."
+answers:
+  heated_floor_area_m2: "About 130 square metres, I think."
+  storeys: "Two floors."
+  wall_insulation: "No idea, probably nothing."
+  glazing: "Old double glazing."
+  roof_insulation: "There is a bit of insulation in the attic, a few centimetres."
+expected:
+  building_type: semi_detached
+  construction_period: y1946_1970
+  heated_floor_area_m2: 130
+  storeys: 2
+  glazing: double_old
+  roof_insulation: thin

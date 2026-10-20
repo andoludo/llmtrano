@@ -1,0 +1,17 @@
+id: correction
+note: the user corrects the floor area in the second turn; the planner should ask which value is right
+opening: "Semi-detached house from 1985 of 120 m2 with two floors."
+follow_ups:
+  - "Sorry, I made a mistake: it is 140 m2, not 120."
+answers:
+  heated_floor_area_m2: "140 m2 is right."
+  wall_insulation: "The cavity walls have a few centimetres of insulation."
+  glazing: "Double glazing from the eighties."
+  roof_insulation: "I don't know."
+expected:
+  building_type: semi_detached
+  construction_period: y1971_1990
+  heated_floor_area_m2: 140
+  storeys: 2
+  wall_insulation: thin
+  glazing: double_old

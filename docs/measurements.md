@@ -166,3 +166,90 @@ Measured 2026-10-18, commit `6f4003a`.
 | Host RAM left during a year simulation | about 15 GB | 2.9 GB (desktop light, no VM) |
 | JSON schema extraction test (step 0.4) | valid, but `insulation: none` for "roof insulated, walls bare" | valid, `insulation: partial` (correct) |
 
+
+## trano 0.56.0 check (step 1.0)
+
+Tutorial house (`first_model.yaml`, unchanged in trano 0.56.0), OpenModelica 1.26.9, local runtime, one output
+point per hour. Measured 2026-10-19 in a 4 vCPU cloud sandbox, not the laptop: durations are about 2 to 3 times the
+step 0.7 numbers and are not comparable with them.
+
+| Library | Period | Status | Duration (s) | Phases (T6, seconds from start) |
+| --- | --- | --- | --- | --- |
+| Buildings 13.0.0 | 1 day | succeeded | 75.8 | generating 0.0, compiling 3.8, simulating 63.6, done 75.8 |
+| IDEAS 3.0.0 | 1 day | succeeded | 62.8 | generating 0.0, compiling 0.5, simulating 56.3, done 62.8 |
+| Buildings 13.0.0 | 1 year | succeeded | 115.2 | generating 0.0, compiling 0.5, simulating 60.3, done 115.2 |
+| IDEAS 3.0.0 | 1 year | succeeded | 79.3 | generating 0.0, compiling 0.4, simulating 50.7, done 79.3 |
+
+KPIs for one year (`trano.kpi.building_kpis`, 100 m2):
+
+| Library | Heating (kWh) | kWh/m2 | Peak (W) | Hours below set point | `EHea` at the end (kWh) |
+| --- | --- | --- | --- | --- | --- |
+| Buildings | 6,085.5 | 60.9 | 3,862 | 274.0 | 5,995.7 |
+| IDEAS | 5,271.6 | 52.7 | 3,804 | 224.7 | 5,193.5 |
+
+- The trapezoid on the hourly grid reads 1.5% above the heater's own energy meter `EHea`. For one winter week
+  (Buildings): hourly grid 238.15 vs 236.54 kWh (+0.68%), 1-minute grid 236.44 vs 236.48 kWh (-0.02%). Peak
+  power for that week: 3,355 W hourly, 3,384 W on the 1-minute grid.
+- Buildings and IDEAS differ by 13% on the same YAML (different zone, wall and window models). Phase 1 uses
+  Buildings throughout, so its numbers are only compared with Buildings runs.
+
+## Heater sizing and the KPI method (step 1.4 and 1.10)
+
+One-year runs of the three compiler fixtures (`tests/test_compile.py`), Buildings, hourly output grid, cloud
+sandbox (4 vCPU). "trapezoid" is `trano.kpi` (power integrated on the output grid), "meter" is the heater's
+own `EHea` integrator (what llmtrano reports).
+
+With trano's default capacity (1 MW):
+
+| Fixture | trapezoid (kWh) | meter (kWh) | Peak on the grid (W) |
+| --- | --- | --- | --- |
+| detached, before 1946, 140 m2 | 103,105 | 21,696 | 506,062 |
+| semi-detached, 1980s, 120 m2 | 40,202 | 6,462 | 302,315 |
+| terraced, renovated, 110 m2 | 31,365 | 1,681 | 478,422 |
+
+With the heater sized at 1.4 times the design heat loss (step 1.4):
+
+| Fixture | Capacity (W) | meter (kWh) | kWh/m2 | trapezoid vs meter | Peak, hourly mean (W) | Peak on the grid (W) |
+| --- | --- | --- | --- | --- | --- | --- |
+| detached, before 1946 | 22,500 | 21,691 | 154.9 | +4.5% | 10,825 | 17,318 |
+| semi-detached, 1980s | 8,000 | 6,469 | 53.9 | +0.4% | 4,335 | 4,715 |
+| terraced, renovated | 3,000 | 1,678 | 15.3 | -2.8% | 2,138 | 1,741 |
+
+- The 1 MW heater spikes to hundreds of kW for minutes after each set point step; the hourly grid catches some
+  spikes and misses others, so the trapezoid is 5 to 19 times the meter. Sizing the heater does not change the
+  annual energy (meter within 0.2%) and makes the peak meaningful.
+- Even sized, the trapezoid stays off by -2.8% to +4.5%: the KPI reads the meter, and the peak is the highest
+  hourly mean power from the meter, which does not depend on the output grid.
+
+## Phase 1 gate comparison (step 1.14)
+
+The gate case's Brief, as a perfect extraction would fill it (`evals/cases/tutorial_house.yaml`), compiled and
+simulated for one year, against `first_model.yaml` simulated directly; then one difference at a time put back
+to the tutorial's value. Buildings, same Uccle weather file, KPIs from the heater's meter.
+
+| Run | Heating (kWh) | kWh/m2 | Peak, hourly mean (W) | Change vs the chat Brief (kWh) |
+| --- | --- | --- | --- | --- |
+| `first_model.yaml` directly | 5,996 | 60.0 | 3,113 | |
+| tutorial house through the chat Brief | 3,417 | 34.2 | 2,782 | |
+| + the tutorial's glazing (argon, no low-e coating) | 5,222 | 52.2 | 3,371 | +1,805 |
+| + the tutorial's infiltration (0.5 ach instead of n50 6, 0.3 ach) | 4,478 | 44.8 | 3,191 | +1,061 |
+| + the tutorial's walls, roof, floor and glazing | 5,603 | 56.0 | 3,039 | +2,186 |
+| + the tutorial's windows (12 m2 south, 4 m2 north) | 2,929 | 29.3 | 2,646 | -488 |
+| + the tutorial's occupancy (7-9 h and 18-23 h, 4.2 people) | 3,463 | 34.6 | 2,635 | +46 |
+| + the tutorial's 8 kW heater | 3,418 | 34.2 | 2,836 | +1 |
+
+The chat Brief needs 43% less heat than the tutorial model. The one-at-a-time effects add up to 6,222 kWh,
+close to the tutorial's 5,996 (the rest is interaction). In order:
+
+1. **Glazing interpretation (+1.8 MWh)**: "double glazing with argon" maps to `double_low_e` (Uw 1.17). The
+   tutorial's glass has no low-e coating (infrared absorptivity 0.84 on both faces), so its windows lose about
+   twice as much.
+2. **Ventilation input (+1.1 MWh)**: the user did not state the airtightness, so the default `average`
+   (n50 6, 0.3 ach) applies; the tutorial has 0.5 ach. Neither model has a ventilation system.
+3. **Constructions (+0.4 MWh beyond the glazing)**: 16 cm of roof insulation parses as `medium` (12 cm of
+   mineral wool, U 0.25), the tutorial's flat roof is about U 0.2; the floor and wall build-ups differ too.
+4. **Window placement (-0.5 MWh)**: the heuristic spreads 20.4 m2 of windows over four facades (20%), the
+   tutorial has 16 m2, 12 of them south. Less glass loses less heat here than the lost south gains.
+5. Occupancy and heater capacity: negligible.
+
+The same Brief run through the ui (stub LLM, real stack) gave 3,417 kWh, identical to the direct run.

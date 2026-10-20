@@ -10,13 +10,17 @@ dependencies = [
     "fastapi>=0.145.0,<0.146",
     "gradio>=6.30.0,<7",
     "httpx>=0.28.1,<1",
+    "langgraph>=1.2.16,<1.3",
+    "langgraph-checkpoint-postgres>=3.2.0,<3.3",
     "openai>=3.35.1,<4",
+    "psycopg-pool>=3.3.3,<4",
     "psycopg[binary]>=3.3.6,<4",
     "pydantic>=2.14.1,<3",
     "pydantic-settings>=2.16.0,<3",
     "pyyaml>=6.0.3,<7",
+    "redis>=5.3.1,<6",
     "sqlalchemy>=2.1.5,<2.2",
-    "trano",
+    "trano>=0.56.0,<0.57",
     "uvicorn>=0.54.0,<0.55",
 ]
 
@@ -24,7 +28,9 @@ dependencies = [
 dev = [
     "mypy>=2.4.0,<3",
     "pytest>=9.1.1,<10",
+    "pytest-asyncio>=1.4.0,<2",
     "ruff>=0.17.1,<0.18",
+    "syrupy>=6.1.1,<7",
     "types-pyyaml>=6.0.12.20260906",
 ]
 
@@ -50,12 +56,16 @@ files = ["src"]
 plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
-# trano has inline types but no py.typed marker yet: read them anyway, do not check trano itself
+# trano has inline types but no py.typed marker yet: read them anyway, do not check trano itself.
+# trano-simulate ships py.typed and needs no override.
 module = ["trano", "trano.*"]
 follow_untyped_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["tests"]  # shared fakes: `from fakes import ...`
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
 addopts = "-m 'not llm and not simulation and not compose' --strict-markers"
 markers = [
     "llm: needs a running LLM endpoint (GPU)",
@@ -63,5 +73,3 @@ markers = [
     "compose: needs the running docker compose stack",
 ]
 
-[tool.uv.sources]
-trano = { git = "https://github.com/andoludo/trano", rev = "4220d3cd2f9e2faee5613a4624dd363d8bd6064d" }
