@@ -38,19 +38,19 @@ def test_models_lists_both() -> None:
 
 
 @pytest.mark.llm
-def test_chat_streams_tokens() -> None:
+def test_session_message_streams_a_reply() -> None:
+    status, body = _request("POST", "/sessions")
+    assert status == 201
+    session_id = json.loads(body)["id"]
     _, body = _request(
         "POST",
-        "/chat",
-        {
-            "model": "qwen3.5-9b",
-            "messages": [{"role": "user", "content": "Reply with the single word: ready"}],
-        },
-        timeout=180,
+        f"/sessions/{session_id}/messages",
+        {"message": "We live in a detached house from 1985."},
+        timeout=300,
     )
-    events = [block for block in body.strip().split("\n\n") if block]
-    assert any(block.startswith("event: token") for block in events)
-    assert events[-1].startswith("event: done")
+    events = [block.split("\n", 1)[0] for block in body.strip().split("\n\n") if block]
+    assert "event: token" in events
+    assert events[-3:] == ["event: brief", "event: questions", "event: phase"]
 
 
 @pytest.mark.simulation

@@ -130,3 +130,37 @@ human in the loop: nothing is simulated before "approved"). A rejection goes bac
 ready the reply still runs before the interrupt, so the user is told to check the card. Reply tokens and run
 progress are streamed with LangGraph's custom stream. The checkpointer deserializes only llmtrano's own state
 types (an explicit msgpack allowlist). `docs/workflow.md` is regenerated from the graph; a test fails when stale.
+
+## Step 1.10 Jobs: check, simulate, KPIs, progress
+
+Simulations take a minute or more, so they run as jobs in the worker, never in the api request (#63 async
+jobs): the api inserts a `runs` row, queues the arq job with the run id as job id, and waits for it while the
+worker publishes trano's phases on Valkey (`run:<id>`), which the workflow relays to the chat and
+`GET /runs/{id}/events` exposes as SSE (#15: the user sees progress instead of a silent minute). The KPIs are
+computed by Python from the result file and stored next to the run (#46 grounding: the explanation can only
+use these numbers). They come from the heater's energy meter rather than trano's trapezoid, which reads
+1.5% to 19 times off depending on the heater's spikes (docs/measurements.md).
+
+## Step 1.11 Interpretation with a number guardrail
+
+The interpretation is the one free-text answer with numbers in it, and numbers are what an LLM invents most
+easily (#45). It is given only the KPI JSON, the Brief with its sources and the assumptions, and told not to
+compare with external benchmarks (none are loaded) and to call drivers "likely" (#46 grounded generation).
+Thinking is allowed for this call (#6). The output guardrail (#49) then extracts every number (English, Dutch
+and French notation, kW and MWh scaled) and accepts it only within 1% of a KPI or Brief value; one rewrite
+with the list of wrong numbers, then a fixed sentence and the KPI table drawn by code.
+
+## Step 1.12 Persistence
+
+Every message is stored with its model, prompt version, tokens and latency, every fact with whether it was
+applied, every confirmed Brief with its provenance, the trano schema hash and the trano version (#61
+versioning: a result can be traced to the exact prompt, schema and code). Thumbs up or down are stored per
+message for the feedback loop (#60). Only the municipality is stored, never an address (GDPR minimisation).
+
+## Step 1.13 API and UI
+
+The api is a thin layer over the graph: each request runs it for one turn under a per-session lock and
+relays its custom events as SSE (#62 streaming), then sends the card, the questions and the phase. The ui
+talks only to the api; it shows the card with "you said" or "assumed" badges and the user's words on hover,
+enables Confirm only when the Brief is ready, and draws the KPI table itself, so the numbers on screen never
+depend on the LLM.
