@@ -1,0 +1,21 @@
+id: french_maison
+language: French
+opening: >-
+  Nous habitons une maison mitoyenne d'un côté construite en 1978, environ 125 m2 sur deux niveaux, à
+  Namur. Double vitrage ancien, les murs ne sont pas isolés, chaudière au gaz à condensation avec des
+  radiateurs.
+answers:
+  roof_insulation: "Il y a 10 cm de laine dans le grenier."
+  airtightness: "Il y a des courants d'air."
+default_answer: "Je ne sais pas."
+expected:
+  building_type: semi_detached
+  construction_period: y1971_1990
+  heated_floor_area_m2: 125
+  storeys: 2
+  municipality: Namur
+  glazing: double_old
+  wall_insulation: none
+  heating_system: gas_boiler_condensing
+  roof_insulation: medium
+  airtightness: leaky

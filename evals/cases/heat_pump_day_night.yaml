@@ -1,0 +1,23 @@
+id: heat_pump_day_night
+note: a heat pump on two zones with the big windows to the south (phase 2)
+opening: >-
+  Detached house built in 2015, 200 m2 over two storeys, well insulated everywhere with triple glazing and
+  an air-water heat pump on radiators. The big windows face the garden, to the south. The bedrooms upstairs
+  are a separate night zone that we keep cooler.
+answers:
+  airtightness: "Airtight, it was blower-door tested."
+  ventilation: "Balanced ventilation with heat recovery."
+expected:
+  building_type: detached
+  construction_period: y2006_2020
+  heated_floor_area_m2: 200
+  storeys: 2
+  wall_insulation: good
+  roof_insulation: good
+  floor_insulation: good
+  glazing: triple
+  heating_system: heat_pump_air_water
+  main_window_orientation: south
+  zoning: day_night
+  airtightness: tight
+  ventilation: balanced_heat_recovery

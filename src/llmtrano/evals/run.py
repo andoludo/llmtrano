@@ -33,7 +33,7 @@ from llmtrano.brief.model import Fact, HouseBrief, Provenance, Scenario, Source
 from llmtrano.compiler.compile import CompiledModel, trano_schema_hash
 from llmtrano.data import tutorial_house_yaml
 from llmtrano.evals.cases import MAX_TURNS, EvalCase, load_cases
-from llmtrano.evals.metrics import CaseResult, FieldCheck, markdown, matches, summarize
+from llmtrano.evals.metrics import CaseResult, FieldCheck, ReferenceCheck, markdown, matches, summarize
 from llmtrano.llm.calls import CallStats
 from llmtrano.logs import configure_logging
 from llmtrano.settings import Settings
@@ -109,6 +109,33 @@ def check_renovation(case: EvalCase, state: WorkflowState) -> dict[str, FieldChe
     return checks
 
 
+def reference_checks(case: EvalCase, result: CaseResult) -> list[ReferenceCheck]:
+    """The gate check: the simulated heating need per m2 against the case's published reference."""
+    if case.reference is None:
+        return []
+    reference = case.reference
+    pairs = [("heating_kwh_per_m2", reference.heating_kwh_per_m2, result.kpis)]
+    if reference.renovation_heating_kwh_per_m2 is not None:
+        pairs.append(
+            ("renovation_heating_kwh_per_m2", reference.renovation_heating_kwh_per_m2, result.renovation_kpis)
+        )
+    checks = []
+    for metric, expected, kpis in pairs:
+        got = kpis.get("heating_energy_kwh_per_m2") if kpis else None
+        ok = got is not None and abs(got - expected) <= reference.tolerance * expected
+        checks.append(
+            ReferenceCheck(
+                metric=metric,
+                reference=expected,
+                got=got,
+                tolerance=reference.tolerance,
+                ok=ok,
+                source=reference.source,
+            )
+        )
+    return checks
+
+
 async def _state(graph: Any, config: dict[str, Any]) -> tuple[WorkflowState, bool]:
     snapshot = await graph.aget_state(config)
     return WorkflowState.model_validate(snapshot.values), bool(snapshot.interrupts)
@@ -160,10 +187,17 @@ async def run_case(
             result.simulated = state.run_id is not None
             result.simulation_ok = state.phase is Phase.done if result.simulated else None
             result.kpis = state.kpis
+            result.renovation_kpis = state.renovation_kpis
+            result.comparison = state.comparison
+            if case.outcome == "compare":
+                result.renovation_simulated = (
+                    state.renovation_kpis is not None and state.comparison is not None
+                )
             result.explanation = state.explanation
             result.guardrail_first_time = state.guardrail.passed_first_time if state.guardrail else None
             result.errors = list(state.errors) if state.phase is Phase.failed else []
             result.outcome = "simulated" if state.phase is Phase.done else "failed"
+            result.reference_checks = reference_checks(case, result)
             if state.explanation:
                 result.transcript.append({"role": "assistant", "content": state.explanation})
     except Exception as error:  # an eval run reports a broken case and goes on
@@ -239,7 +273,7 @@ async def main(argv: list[str] | None = None) -> int:
                 )
                 log.info("case end case=%s outcome=%s", case.id, result.outcome)
                 results.append(result)
-                if case.gate and not args.no_simulate:
+                if case.id == "tutorial_house" and not args.no_simulate:
                     reference = await simulate_tutorial(jobs, session_id)
     finally:
         await redis.aclose()
@@ -253,7 +287,7 @@ async def main(argv: list[str] | None = None) -> int:
         "interpretation model": settings.llm_interpret_model,
         "cases": str(len(results)),
     }
-    gate = next((r for r in results if r.gate), None)
+    gate = next((r for r in results if r.id == "tutorial_house"), None)
     comparison = gate_comparison(gate, reference)
     args.output.mkdir(parents=True, exist_ok=True)
     name = f"{stamp}-{model}"
