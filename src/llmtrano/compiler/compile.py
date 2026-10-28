@@ -13,7 +13,7 @@ from typing import Any
 import yaml
 from pydantic import BaseModel, ConfigDict
 
-from llmtrano.brief.defaults import apply_defaults, assumptions
+from llmtrano.brief.defaults import NO_DEFAULT, apply_defaults, assumptions
 from llmtrano.brief.model import Airtightness, BuildingType, HouseBrief, Provenance, missing_required
 from llmtrano.compiler.constructions import (
     ASSUMED_GLAZINGS,
@@ -223,7 +223,7 @@ def heating_schedule(day_c: float, night_c: float, start_h: int, end_h: int) -> 
 
 def _filled(brief: HouseBrief) -> dict[str, Any]:
     values = brief.model_dump()
-    empty = [name for name, value in values.items() if value is None and name != "municipality"]
+    empty = [name for name, value in values.items() if value is None and name not in NO_DEFAULT]
     if empty:
         raise BriefNotReadyError(f"fields without a value or a default: {', '.join(empty)}")
     values.update({name: getattr(brief, name) for name in values})  # keep the enum members

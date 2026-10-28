@@ -15,11 +15,14 @@ from llmtrano.brief.model import (
     BuildingType,
     FieldProvenance,
     Glazing,
+    HeatingSystem,
     HouseBrief,
     InsulationLevel,
     Orientation,
     Period,
     Source,
+    Ventilation,
+    Zoning,
     missing_required,
 )
 
@@ -38,6 +41,19 @@ def test_enum_members() -> None:
     assert [m.value for m in Glazing] == ["single", "double_old", "double_low_e", "triple", "unknown"]
     assert [m.value for m in Airtightness] == ["leaky", "average", "tight", "unknown"]
     assert [m.value for m in Orientation] == ["north", "east", "south", "west"]
+    assert [m.value for m in Ventilation] == [
+        "natural",
+        "mechanical_extract",
+        "balanced_heat_recovery",
+        "unknown",
+    ]
+    assert [m.value for m in HeatingSystem] == [
+        "gas_boiler_old",
+        "gas_boiler_condensing",
+        "heat_pump_air_water",
+        "unknown",
+    ]
+    assert [m.value for m in Zoning] == ["one", "day_night"]
 
 
 def test_brief_field_literal_lists_every_field() -> None:
@@ -124,7 +140,11 @@ def test_defaults_fill_every_optional_field_of_a_dated_house() -> None:
     assert filled.glazing is Glazing.double_old
     assert filled.street_facade_orientation is Orientation.north
     assert filled.occupants == 2
+    assert filled.ventilation is Ventilation.natural  # before 2006
+    assert filled.heating_system is HeatingSystem.unknown  # the ideal heater
+    assert filled.zoning is Zoning.one
     assert filled.municipality is None  # stored only when given; never defaulted
+    assert filled.main_window_orientation is None  # windows spread evenly
     assert set(provenance) == set(DEFAULTS)
     assert all(item.source is Source.default and item.basis for item in provenance.values())
 
@@ -142,6 +162,12 @@ def test_defaults_fill_every_optional_field_of_a_dated_house() -> None:
 )
 def test_period_defaults(period: Period, insulation: InsulationLevel, glazing: Glazing) -> None:
     filled, _ = apply_defaults(HouseBrief(construction_period=period))
+    expected_ventilation = (
+        Ventilation.mechanical_extract
+        if period in (Period.y2006_2020, Period.after_2020)
+        else Ventilation.natural
+    )
+    assert filled.ventilation is expected_ventilation
     assert filled.wall_insulation is insulation
     assert filled.glazing is glazing
 
@@ -167,6 +193,9 @@ def test_defaults_never_overwrite_user_values() -> None:
         "glazing": Glazing.triple,
         "street_facade_orientation": Orientation.east,
         "occupants": 5,
+        "ventilation": Ventilation.balanced_heat_recovery,
+        "heating_system": HeatingSystem.heat_pump_air_water,
+        "zoning": Zoning.day_night,
     }
     brief = HouseBrief(construction_period=Period.before_1946, **given)
     provenance = {name: _user(str(value)) for name, value in given.items()}
@@ -222,5 +251,8 @@ def test_assumption_lines_name_the_value_and_the_basis() -> None:
     lines = assumptions(filled, provenance)
     assert "window to wall ratio = 0.2 (rule of thumb (assumption))" in lines
     assert (
-        "wall insulation = none (assumed from the construction period until TABULA data (phase 2))" in lines
+        "wall insulation = none (assumed from the construction period (rule of thumb until TABULA data))"
+        in lines
     )
+    assert "ventilation = natural (" in " ".join(lines)
+    assert "heating system = unknown (not stated: an ideal heater gives the heating need" in " ".join(lines)
