@@ -123,7 +123,7 @@ async def test_run_case_scores_a_simulated_case() -> None:
     assert result.turns_to_confirmation == 1
     assert all(check.ok for check in result.fields.values()), result.fields
     assert result.compiled and result.check_ok and result.simulation_ok and result.guardrail_first_time
-    assert result.kpis == KPIS
+    assert result.kpis is not None and {key: result.kpis[key] for key in KPIS} == KPIS
     assert len(result.ttft_ms) == 1 and len(result.turn_s) == 1
     assert result.transcript[0] == {"role": "user", "content": case.opening}
 

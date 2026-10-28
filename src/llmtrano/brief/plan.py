@@ -215,10 +215,19 @@ def next_questions(
 
 
 def ready_to_confirm(
-    brief: HouseBrief, provenance: Provenance, conflicts: list[Conflict], *, user_says_complete: bool
+    brief: HouseBrief,
+    provenance: Provenance,
+    conflicts: list[Conflict],
+    *,
+    user_says_complete: bool,
+    confirmed_before: bool = False,
 ) -> bool:
     """All required fields stated, no conflict, a supported building, and either the user said the description
-    is complete or the walls, roof and glazing are user-given ("I don't know" counts as an answer)."""
+    is complete or the walls, roof and glazing are user-given ("I don't know" counts as an answer).
+
+    A Brief that was confirmed and simulated before (phase 2: a renovation added after the result) is ready
+    again as soon as the required fields hold and nothing conflicts.
+    """
     if conflicts or brief.building_type is BuildingType.apartment:
         return False
     required = all(
@@ -230,7 +239,7 @@ def ready_to_confirm(
     envelope = all(
         (said := provenance.get(name)) is not None and said.source is Source.user for name in ENVELOPE_FIELDS
     )
-    return required and (user_says_complete or envelope)
+    return required and (user_says_complete or envelope or confirmed_before)
 
 
 def _plain(value: object) -> object:

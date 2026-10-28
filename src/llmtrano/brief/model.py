@@ -181,6 +181,7 @@ REQUIRED_FIELDS: tuple[str, ...] = ("building_type", "heated_floor_area_m2", "st
 class Source(StrEnum):
     user = "user"
     default = "default"
+    renovation = "renovation"  # a value of the renovation overlay (phase 2)
 
 
 Confidence = Literal["low", "medium", "high"]

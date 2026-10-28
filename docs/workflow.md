@@ -1,6 +1,6 @@
 # Workflow
 
-The phase 1 LangGraph graph (`llmtrano.workflow.graph`), exported with `graph.get_graph().draw_mermaid()`.
+The LangGraph graph (`llmtrano.workflow.graph`), exported with `graph.get_graph().draw_mermaid()`.
 Regenerate after every change with `uv run python -m llmtrano.workflow.graph`; `tests/test_workflow.py` fails
 when this file is stale.
 
@@ -22,21 +22,24 @@ graph TD;
 	check(check)
 	simulate(simulate)
 	kpis(kpis)
+	compare(compare)
 	interpret(interpret)
 	explain_error(explain_error)
 	__end__([<p>__end__</p>]):::last
 	__start__ --> ingest;
 	check -.-> explain_error;
 	check -.-> simulate;
+	compare --> interpret;
 	compile -.-> check;
+	compile -.-> compare;
 	compile -.-> explain_error;
 	confirm -.-> compile;
 	confirm -.-> ingest;
 	confirm -.-> merge;
 	extract --> merge;
 	ingest --> extract;
-	kpis -.-> explain_error;
-	kpis -.-> interpret;
+	kpis -.-> compare;
+	kpis -.-> compile;
 	merge --> plan;
 	plan --> respond;
 	respond -.-> __end__;

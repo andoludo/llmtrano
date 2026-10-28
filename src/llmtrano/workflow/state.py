@@ -11,7 +11,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from llmtrano.brief.merge import Conflict
-from llmtrano.brief.model import Fact, FieldProvenance, HouseBrief
+from llmtrano.brief.model import Fact, FieldProvenance, HouseBrief, Scenario
 from llmtrano.brief.plan import Question
 from llmtrano.compiler.compile import CompiledModel
 from llmtrano.llm.reply import Language
@@ -60,8 +60,14 @@ class WorkflowState(BaseModel):
     compiled: CompiledModel | None = None
     run_id: uuid.UUID | None = None
     check_run_id: uuid.UUID | None = None
-    kpis: dict[str, Any] | None = None
+    kpis: dict[str, Any] | None = None  # the baseline, with energy and heat-loss split added (phase 2)
     explanation: str | None = None
+    # phase 2: the renovation scenario, simulated after the baseline when renovation facts exist
+    scenario: Scenario = "baseline"  # the scenario being compiled, checked and simulated
+    renovation_compiled: CompiledModel | None = None
+    renovation_run_id: uuid.UUID | None = None
+    renovation_kpis: dict[str, Any] | None = None
+    comparison: dict[str, Any] | None = None
     # turn bookkeeping
     turn: int = 0
     language: Language = "English"

@@ -370,3 +370,9 @@ def test_not_ready_with_a_conflict_or_a_defaulted_required_field() -> None:
     assert not ready_to_confirm(brief, provenance, [conflict], user_says_complete=True)
     provenance["storeys"] = DEFAULT
     assert not ready_to_confirm(brief, provenance, [], user_says_complete=True)
+
+
+def test_a_brief_confirmed_before_is_ready_again_without_the_envelope() -> None:
+    brief, provenance = _stated(REQUIRED)
+    assert not ready_to_confirm(brief, provenance, [], user_says_complete=False)
+    assert ready_to_confirm(brief, provenance, [], user_says_complete=False, confirmed_before=True)
