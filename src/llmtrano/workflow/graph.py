@@ -304,7 +304,14 @@ def build_graph(
         if same and state.renovation_kpis is not None:
             return Command(goto="compare", update={"scenario": "baseline"})
         filled, provenance = apply_defaults(*overlay)
-        await recorder.brief(state.session_id, filled, provenance, renovation.schema_hash, confirmed=True)
+        await recorder.brief(
+            state.session_id,
+            filled,
+            provenance,
+            renovation.schema_hash,
+            confirmed=True,
+            scenario="renovation",
+        )
         _emit("run_phase", phase="compiled", kind="check", scenario="renovation")
         return Command(
             goto="check",
@@ -320,7 +327,7 @@ def build_graph(
 
     async def check(state: WorkflowState) -> Command[Literal["simulate", "explain_error"]]:
         _emit("run_phase", phase="checking", kind="check", scenario=state.scenario)
-        outcome = await deps.jobs.check_model(state.session_id, current(state))
+        outcome = await deps.jobs.check_model(state.session_id, current(state), scenario=state.scenario)
         if not outcome.ok:
             errors = outcome.errors or [f"the model check failed ({outcome.error_kind})"]
             return Command(goto="explain_error", update={"check_run_id": outcome.run_id, "errors": errors})
@@ -332,7 +339,7 @@ def build_graph(
         async def on_phase(phase: str) -> None:
             _emit("run_phase", phase=phase, kind="simulate", scenario=scenario)
 
-        outcome = await deps.jobs.simulate(state.session_id, current(state), on_phase)
+        outcome = await deps.jobs.simulate(state.session_id, current(state), on_phase, scenario=scenario)
         run_key = "renovation_run_id" if scenario == "renovation" else "run_id"
         if not outcome.ok:
             reason = (

@@ -45,15 +45,20 @@ class FakeJobs:
     checked: list[CompiledModel] = field(default_factory=list)
     simulated: list[CompiledModel] = field(default_factory=list)
 
-    async def check_model(self, session_id: str, compiled: CompiledModel) -> CheckOutcome:
+    scenarios: list[str] = field(default_factory=list)
+
+    async def check_model(
+        self, session_id: str, compiled: CompiledModel, scenario: str = "baseline"
+    ) -> CheckOutcome:
         self.checked.append(compiled)
         errors = [] if self.check_ok else ["spaces[0].parameters.floor_area: must be >= 0 (Floor area [m2])"]
         return CheckOutcome(run_id=uuid.uuid4(), ok=self.check_ok, errors=errors)
 
     async def simulate(
-        self, session_id: str, compiled: CompiledModel, on_phase: PhaseCallback
+        self, session_id: str, compiled: CompiledModel, on_phase: PhaseCallback, scenario: str = "baseline"
     ) -> SimulationOutcome:
         self.simulated.append(compiled)
+        self.scenarios.append(scenario)
         for phase in ("generating", "compiling", "simulating", "done"):
             await on_phase(phase)
         if not self.simulate_ok:
@@ -266,9 +271,9 @@ class ScenarioJobs(FakeJobs):
     """Fake jobs whose KPIs depend on the model: the renovated house (triple glazing) needs less."""
 
     async def simulate(
-        self, session_id: str, compiled: CompiledModel, on_phase: PhaseCallback
+        self, session_id: str, compiled: CompiledModel, on_phase: PhaseCallback, scenario: str = "baseline"
     ) -> SimulationOutcome:
-        outcome = await super().simulate(session_id, compiled, on_phase)
+        outcome = await super().simulate(session_id, compiled, on_phase, scenario)
         if outcome.ok and "WINDOW_TRIPLE" in compiled.yaml_text:
             return SimulationOutcome(run_id=outcome.run_id, ok=True, kpis=RENOVATION_KPIS)
         return outcome
@@ -284,6 +289,7 @@ async def test_renovation_facts_give_a_second_scenario_and_a_comparison(harness:
         "WINDOW_DOUBLE_OLD:001",
         "WINDOW_TRIPLE:001",
     ]
+    assert harness.jobs.scenarios == ["baseline", "renovation"]
     assert result["kpis"]["heating_energy_kwh"] == 6469.2
     assert result["renovation_kpis"]["heating_energy_kwh"] == 3100.0
     comparison = result["comparison"]

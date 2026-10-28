@@ -84,6 +84,7 @@ class RunOut(BaseModel):
     created_at: datetime
     status: RunStatus
     kind: str
+    scenario: str
     session_id: uuid.UUID | None
     phase: str | None
     errors: list[str] | None

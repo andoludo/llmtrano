@@ -4,7 +4,7 @@ Phase 0: ``runs``, one row per worker job. Phase 1 adds the conversation: ``sess
 model, prompt version, tokens and latency of each LLM call), ``facts`` (every extracted fact, applied or not),
 ``house_briefs`` (each confirmed Brief with its provenance and the trano schema hash), ``kpis`` (the KPI JSON
 of a simulation run) and ``feedback``. Only the municipality is stored, never a street address (GDPR
-minimisation).
+minimisation). Phase 2 adds ``scenario`` (``baseline`` or ``renovation``) to ``runs`` and ``house_briefs``.
 """
 
 import enum
@@ -81,6 +81,7 @@ class Run(Base):
     kind: Mapped[RunKind] = mapped_column(
         _enum(RunKind, "run_kind"), default=RunKind.SIMULATE, server_default=RunKind.SIMULATE.value
     )
+    scenario: Mapped[str] = mapped_column(String(16), default="baseline", server_default="baseline")
     library: Mapped[str] = mapped_column(String(64))
     start_s: Mapped[float] = mapped_column(Float, default=0.0)
     end_s: Mapped[float] = mapped_column(Float)
@@ -135,6 +136,7 @@ class HouseBriefRow(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     session_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("sessions.id", ondelete="CASCADE"), index=True)
     version: Mapped[int] = mapped_column(Integer)
+    scenario: Mapped[str] = mapped_column(String(16), default="baseline", server_default="baseline")
     values: Mapped[dict[str, Any]] = mapped_column(Json)
     provenance: Mapped[dict[str, Any]] = mapped_column(Json)
     schema_hash: Mapped[str | None] = mapped_column(String(64))

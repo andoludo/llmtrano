@@ -29,7 +29,7 @@ import yaml
 from langgraph.types import Command
 
 from llmtrano.brief.defaults import is_given
-from llmtrano.brief.model import Fact, HouseBrief, Provenance, Source
+from llmtrano.brief.model import Fact, HouseBrief, Provenance, Scenario, Source
 from llmtrano.compiler.compile import CompiledModel, trano_schema_hash
 from llmtrano.data import tutorial_house_yaml
 from llmtrano.evals.cases import MAX_TURNS, EvalCase, load_cases
@@ -73,8 +73,9 @@ class StatsRecorder:
         provenance: Provenance,
         schema_hash: str | None,
         confirmed: bool,
+        scenario: Scenario = "baseline",
     ) -> None:
-        await self.inner.brief(session_id, brief, provenance, schema_hash, confirmed)
+        await self.inner.brief(session_id, brief, provenance, schema_hash, confirmed, scenario)
 
 
 def next_message(case: EvalCase, state: WorkflowState, follow_ups: list[str]) -> str:
