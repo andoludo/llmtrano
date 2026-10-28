@@ -15,6 +15,7 @@ from llmtrano.brief.model import (
     BuildingType,
     FieldProvenance,
     Glazing,
+    HeatingSystem,
     HouseBrief,
     InsulationLevel,
     Orientation,
@@ -280,6 +281,46 @@ def test_day_and_night_zones_compile_to_two_spaces(tmp_path: Path) -> None:
     path.write_text(compiled.yaml_text)
     network = convert_network("zones_check", path, library=Library.from_configuration("Buildings"))
     assert "night_001" in network.model()
+
+
+@pytest.mark.parametrize("system", [s for s in HeatingSystem if s is not HeatingSystem.unknown])
+def test_hydronic_systems_pass_trano_schema_and_generate_modelica(
+    system: HeatingSystem, tmp_path: Path
+) -> None:
+    brief = FIXTURES["semi_detached_1980s"].model_copy(
+        update={"heating_system": system, "zoning": Zoning.day_night}
+    )
+    compiled = compile_brief(brief, {})
+    validate_schema(yaml.safe_load(compiled.yaml_text))
+    path = tmp_path / "model.yaml"
+    path.write_text(compiled.yaml_text)
+    network = convert_network("hydronic_check", path, library=Library.from_configuration("Buildings"))
+    modelica = network.model()
+    assert "ideal_heating_cooling" not in compiled.yaml_text
+    for space in compiled.model_dict["spaces"]:
+        assert [next(iter(e)) for e in space["emissions"]] == ["radiator", "valve"]
+    kinds = [next(iter(item)) for item in compiled.model_dict["systems"]]
+    assert kinds == ["boiler", "pump", "three_way_valve", "temperature_sensor", "split_valve"]
+    generator = compiled.sizing["generator"]
+    assert (
+        generator["kind"] == system.value
+        and generator["nominal_power_w"] > compiled.sizing["design_heat_loss_w"]
+    )
+    assert set(generator["radiators_w"]) == {"DAY", "NIGHT"}
+    assert any(line.startswith("heating: ") for line in compiled.assumptions)
+    assert not any(line.startswith("heating by an ideal heater") for line in compiled.assumptions)
+    expected = (
+        "AirWaterHeatPumpGenerator_001"
+        if system is HeatingSystem.heat_pump_air_water
+        else ("BoilerWithoutStorageGenerator_001")
+    )
+    assert expected in modelica
+
+
+def test_unknown_heating_system_keeps_the_ideal_heater() -> None:
+    compiled = compile_brief(FIXTURES["detached_old"], {})
+    assert "ideal_heating_cooling" in compiled.yaml_text and "systems" not in compiled.model_dict
+    assert compiled.sizing["generator"] == {}
 
 
 def test_day_night_on_one_storey_is_noted() -> None:

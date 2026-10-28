@@ -19,12 +19,14 @@ from llmtrano.brief.defaults import NO_DEFAULT, apply_defaults, assumptions
 from llmtrano.brief.model import (
     Airtightness,
     BuildingType,
+    HeatingSystem,
     HouseBrief,
     Provenance,
     Ventilation,
     Zoning,
     missing_required,
 )
+from llmtrano.compiler import systems as hydronic
 from llmtrano.compiler.constructions import (
     ASSUMED_GLAZINGS,
     FRAME_FRACTION,
@@ -121,6 +123,9 @@ class ZoneModel(BaseModel):
     loss: DesignLoss
     heater_capacity_w: float
     space: dict[str, Any]
+    schedule: str  # "3600*{start, end}" of the zone's set point
+    setpoint_c: float
+    setback_c: float
 
 
 @cache
@@ -191,12 +196,42 @@ def build_model(brief: HouseBrief) -> tuple[dict[str, Any], dict[str, Any], list
     n50 = N50[values["airtightness"]]
     ventilation: Ventilation = values["ventilation"]
     floor_area = float(values["heated_floor_area_m2"])
-    notes.append(IDEAL_HEATER_ASSUMPTION)
+    heating_system: HeatingSystem = values["heating_system"]
 
     zones = [
         _zone_model(zone, values, wall=wall, roof=roof, floor=floor, window=window, n50=n50, house=house)
         for zone in house.zones
     ]
+    systems: list[dict[str, Any]] = []
+    generator: dict[str, Any] = {}
+    if heating_system is HeatingSystem.unknown:
+        notes.append(IDEAL_HEATER_ASSUMPTION)
+    else:
+        spec = hydronic.SPECS[heating_system]
+        radiators = [hydronic.radiator_power_w(zone.loss.total_w, spec) for zone in zones]
+        flows = [hydronic.radiator_flow_kg_s(zone.loss.total_w, spec) for zone in zones]
+        generator_w = hydronic.generator_power_w(sum(zone.loss.total_w for zone in zones), spec)
+        names = [zone.geometry.name for zone in zones]
+        for zone, radiator_w, flow in zip(zones, radiators, flows, strict=True):
+            zone.space["emissions"] = hydronic.radiator_emissions(
+                zone.geometry.name,
+                radiator_w,
+                flow_kg_s=flow,
+                schedule=zone.schedule,
+                setpoint_c=zone.setpoint_c,
+                setback_c=zone.setback_c,
+            )
+        systems += hydronic.hydronic_loop(spec, generator_w, names, flows)
+        notes.append(hydronic.describe(spec, generator_w, radiators))
+        generator = {
+            "kind": heating_system.value,
+            "fuel": spec.fuel,
+            "nominal_power_w": generator_w,
+            "supply_temperature_c": spec.supply_c,
+            "efficiency": spec.efficiency,
+            "radiators_w": dict(zip(names, radiators, strict=True)),
+            "radiator_oversizing": round(hydronic.radiator_oversizing(spec), 2),
+        }
     constructions = [wall, roof, floor]
     if any(zone.geometry.of(SurfaceKind.party_wall) for zone in zones):
         constructions.append(PARTY_WALL)
@@ -206,7 +241,6 @@ def build_model(brief: HouseBrief) -> tuple[dict[str, Any], dict[str, Any], list
     glass_ids = _unique(layer.glass for layer in window.layers if isinstance(layer, GlassLayer))
     gas_ids = _unique(layer.gas for layer in window.layers if isinstance(layer, GasLayer))
 
-    systems: list[dict[str, Any]] = []
     if ventilation is Ventilation.balanced_heat_recovery:
         systems.append(_system_d(zones))
     model: dict[str, Any] = {
@@ -239,6 +273,7 @@ def build_model(brief: HouseBrief) -> tuple[dict[str, Any], dict[str, Any], list
         "design_heat_loss_by_element_w": {k: round(v) for k, v in total.by_element().items()},
         "heat_loss_share": {k: round(v, 3) for k, v in total.shares().items()},
         "heater_capacity_w": sum(zone.heater_capacity_w for zone in zones),
+        "generator": generator,
         "zones": {
             zone.geometry.name: {
                 "floor_area_m2": zone.geometry.floor_area_m2,
@@ -348,7 +383,15 @@ def _zone_model(
         flow = mass_flow_kg_s(HYGIENE_ACH, zone.volume_m3)
         space["ventilation_inlets"] = [_duct(f"DUCT_SUPPLY_{zone.name}:001", flow)]
         space["ventilation_outlets"] = [_duct(f"DUCT_EXTRACT_{zone.name}:001", flow)]
-    return ZoneModel(geometry=zone, loss=loss, heater_capacity_w=capacity, space=space)
+    return ZoneModel(
+        geometry=zone,
+        loss=loss,
+        heater_capacity_w=capacity,
+        space=space,
+        schedule=f"3600*{{{start_h}, {end_h}}}",
+        setpoint_c=day_c,
+        setback_c=night_c,
+    )
 
 
 def heating_schedule(day_c: float, night_c: float, start_h: int, end_h: int) -> str:
