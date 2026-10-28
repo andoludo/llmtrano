@@ -281,3 +281,31 @@ Decisions taken while building phase 1 without stopping at the checkpoints; thos
   bubble per message (`group_consecutive_messages=False`) so each answer has its own thumbs.
 - **trano issues found** (for trano, not blocking): the KPI trapezoid (above); pydantic serializer warnings from
   numpy `float32` layout coordinates in `convert_network`; the dict default package name `model`; no `py.typed`.
+
+## 2026-10-28 Phase 2 start: decisions carried over from the phase 1 review
+
+Ando asked to build phases 2 and 3 in one go, taking the decisions of `docs/phase-1-review.md` on good practice and
+collecting the ones that still need him at the end (`docs/phase-3-review.md`). Taken:
+
+- **Ventilation** (review item 1): phase 2 models it. Natural ventilation adds outdoor air up to 0.5 1/h in total (the
+  EN 12831 minimum trano's old reference house uses), mechanical extract adds 0.5 1/h on top of the infiltration, and
+  balanced ventilation uses trano's system D with 0.8 heat recovery. The default by period is an assumption shown on the
+  card (natural before 2006, extract from 2006, when the Flemish EPB started requiring a ventilation system).
+- **"Argon" stays `double_low_e`** (item 2): real argon double glazing has a coating; the gate difference is explained,
+  not hidden. The tutorial's uncoated argon glass gets no level of its own.
+- **KPI method stays in llmtrano** (item 3) and grows to radiators and generators; moving it into `trano.kpi` is the
+  trano follow-up T10 in `docs/trano-changes.md`.
+- **Heater sizing, occupancy, roof midpoint rule, respond before the interrupt, corrections as conflicts, answer
+  buttons without the LLM, the guardrail scope** (items 4 to 10): kept as built.
+- **Extraction fixtures** (item 11) stay hand-written until the first live run on the laptop.
+- **trano issues** (item 12) are written as T9 to T12 in `docs/trano-changes.md` for Ando to file; nothing in the
+  trano repository changes in this phase.
+- **trano version**: PyPI has trano 0.65.0 and trano-simulate 0.3.0 (checked 2026-10-28); llmtrano stays on
+  `trano>=0.56.0,<0.57`, the version the worker image was measured with. The bump is a decision for Ando: the
+  release notes since 0.57 (FastSmoothBuildings as a default library, the package split) have not been checked
+  against the worker image here.
+- **Heat-loss split**: a steady-state estimate from the compiler's U-values, areas and air flows, labelled an estimate.
+  The per-element split read from the result file is the trano follow-up T11 (Buildings exposes
+  `conExt[i].opa_b.Q_flow`, `conExtWin[i].glaUns_b.Q_flow`, `conBou[i].opa_b.Q_flow`; checked in trano's stored
+  `three_zones_hydronic_heating.building_res.mat`).
+- **Energy prices and CO2 factors** are settings with documented defaults (step 2.6); the values need Ando's check.

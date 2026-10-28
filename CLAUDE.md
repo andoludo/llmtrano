@@ -1,15 +1,17 @@
 # llmtrano: instructions for Claude Code
 
 This file is loaded in every Claude Code session in this repo. Keep it short and true.
-Detailed task lists live in `docs/phase-0.md`, `docs/phase-1.md` and `docs/trano-changes.md`.
+Detailed task lists live in `docs/phase-0.md` to `docs/phase-3.md` and `docs/trano-changes.md`.
 
 ## What we are building
 
 A local-first LLM assistant that turns a plain-language house description into a trano
-building model, simulates it with OpenModelica, and explains the result. Phase 0 and 1 build
+building model, simulates it with OpenModelica, and explains the result. Phase 0 and 1 built
 the **happy path**: one house, one zone, ideal heating, one annual simulation, one
-explanation. Everything else (renovation overlay, hydronic systems, RAG, observability
-stack, production hardening) comes later and must not be started here.
+explanation. Phase 2 adds ventilation, day and night zones, hydronic heating systems, the
+renovation overlay, a heat-loss split, costs and CO2. Phase 3 adds the eval set at scale, an
+LLM judge, grounded references, observability and hardening. Anything beyond the phase files
+(user-named rooms, domestic hot water, PV, multi-user accounts) is not started here.
 
 The owner (Ando) maintains trano and uses this project to learn LLM engineering. So:
 
@@ -71,9 +73,9 @@ config/llama-swap.yaml    model definitions for the llm service
 docker/worker.Dockerfile  OpenModelica + trano + llmtrano
 docker/app.Dockerfile     api and ui
 src/llmtrano/
-  settings.py  llm/  brief/  compiler/  workflow/  jobs/  kpi/  db/  api/  ui/  evals/  bench.py
+  settings.py  llm/  brief/  compiler/  workflow/  jobs/  kpi/  db/  api/  ui/  evals/  knowledge/  bench.py
 tests/
-docs/  phase-0.md  phase-1.md  trano-changes.md  decisions.md  measurements.md
+docs/  phase-0.md ... phase-3.md  trano-changes.md  decisions.md  measurements.md  runbook.md
 ```
 
 ## When unsure
