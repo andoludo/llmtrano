@@ -120,11 +120,29 @@ def retry_note(wrong: Iterable[str]) -> str:
     )
 
 
-def fallback_text(kpis: Mapping[str, Any]) -> str:
-    """The fixed sentence shown instead of an LLM text that failed the guardrail twice."""
-    return (
+def fallback_text(
+    kpis: Mapping[str, Any],
+    renovation_kpis: Mapping[str, Any] | None = None,
+    comparison: Mapping[str, Any] | None = None,
+) -> str:
+    """The fixed sentences shown instead of an LLM text that failed the guardrail twice."""
+    text = (
         f"The simulated house needs {kpis['heating_energy_kwh']:.0f} kWh of heat per year, "
         f"{kpis['heating_energy_kwh_per_m2']:.1f} kWh per m2 of heated floor area, with a peak heating "
-        f"power of {kpis['peak_heating_w']:.0f} W. The table shows the results; the explanation could not be "
-        "checked and is not shown."
+        f"power of {kpis['peak_heating_w']:.0f} W."
     )
+    energy = kpis.get("energy") or {}
+    if energy.get("cost_eur") is not None:
+        fuel = energy["fuel"]
+        text += (
+            f" With its {fuel} heating it uses {energy['final_energy_kwh']:.0f} kWh of {fuel}, about "
+            f"{energy['cost_eur']:.0f} EUR and {energy['co2_kg']:.0f} kg of CO2 per year at the prices and "
+            "factors assumed."
+        )
+    saving = (comparison or {}).get("heating_energy_kwh")
+    if renovation_kpis is not None and saving:
+        text += (
+            f" After the renovation it needs {renovation_kpis['heating_energy_kwh']:.0f} kWh, "
+            f"{saving['saving']:.0f} kWh ({saving['saving_percent']}%) less."
+        )
+    return text + " The table shows the results; the explanation could not be checked and is not shown."

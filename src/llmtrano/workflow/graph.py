@@ -31,7 +31,7 @@ from llmtrano.brief.card import build_card
 from llmtrano.brief.defaults import apply_defaults
 from llmtrano.brief.merge import Conflict, merge_facts
 from llmtrano.brief.model import Fact, FieldProvenance, HouseBrief
-from llmtrano.brief.overlay import renovation_brief
+from llmtrano.brief.overlay import renovation_brief, renovation_changes
 from llmtrano.brief.parse import ParseError, parse_value
 from llmtrano.brief.plan import Option, Question, next_questions, ready_to_confirm
 from llmtrano.compiler.compile import BriefNotReadyError, CompiledModel, compile_brief
@@ -369,12 +369,17 @@ def build_graph(
     async def interpret(state: WorkflowState) -> Update:
         assert state.kpis is not None and state.compiled is not None
         filled, provenance = apply_defaults(state.brief, state.provenance)
+        overlay = renovation_brief(state.brief, state.provenance, state.renovation_facts)
+        renovated = apply_defaults(*overlay)[0] if overlay and state.renovation_kpis is not None else None
         dynamic = interpret_input(
             kpis=state.kpis,
             brief=filled,
             provenance=provenance,
             assumptions=state.compiled.assumptions,
             language=state.language,
+            renovation_kpis=state.renovation_kpis if renovated is not None else None,
+            renovation_changes=renovation_changes(filled, renovated) if renovated is not None else (),
+            comparison=state.comparison,
         )
         brief_values: dict[str, Any] = {
             **filled.model_dump(mode="json"),
@@ -403,7 +408,7 @@ def build_graph(
             else:
                 report.wrong_retry = result.wrong
                 report.fallback_used = True
-                text = fallback_text(state.kpis)
+                text = fallback_text(state.kpis, state.renovation_kpis, state.comparison)
                 _emit("guardrail", action="fallback", wrong=result.wrong, text=text)
                 log.warning("guardrail fallback session=%s wrong=%r", state.session_id, result.wrong)
                 message_id = await recorder.message(state.session_id, "assistant", text)

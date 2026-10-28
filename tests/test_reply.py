@@ -98,3 +98,73 @@ def test_interpret_input_has_only_rounded_results_brief_and_assumptions() -> Non
     assert '"peak_heating_w": 3862.3' in text
     assert "zones" not in text
     assert text.endswith("Assumptions:\n- weather: Uccle")
+
+
+def test_interpret_input_with_a_system_a_split_and_a_renovation() -> None:
+    kpis = {
+        "heating_energy_kwh": 9000.0,
+        "heating_energy_kwh_per_m2": 75.0,
+        "peak_heating_w": 6000.0,
+        "heated_floor_area_m2": 120.0,
+        "zones": [],
+        "system": {"kind": "without_storage", "fuel": "gas", "seasonal_efficiency": 0.8123},
+        "energy": {
+            "fuel": "gas",
+            "final_energy_kwh": 11000.0,
+            "auxiliary_electricity_kwh": 20.0,
+            "cost_eur": 1100,
+            "co2_kg": 2222,
+            "note": None,
+            "prices": {"gas_eur_per_kwh": 0.1, "electricity_eur_per_kwh": 0.35},
+            "emission_factors": {"gas_kg_per_kwh": 0.202, "electricity_kg_per_kwh": 0.2},
+        },
+        "heat_loss_split": {
+            "share_percent": {"walls": 40, "windows": 30},
+            "estimated_kwh": {"walls": 3600, "windows": 2700},
+        },
+        "sizing": {
+            "design_heat_loss_w": 8000,
+            "heater_capacity_w": 11500.0,
+            "generator": {"nominal_power_w": 12000.0},
+        },
+    }
+    renovation = {**kpis, "heating_energy_kwh": 4000.0, "heating_energy_kwh_per_m2": 33.3}
+    comparison = {
+        "heating_energy_kwh": {
+            "baseline": 9000.0,
+            "renovation": 4000.0,
+            "saving": 5000.0,
+            "saving_percent": 56,
+        }
+    }
+    text = interpret_input(
+        kpis=kpis,
+        brief=HouseBrief(storeys=2),
+        provenance={},
+        assumptions=["weather: Uccle"],
+        language="English",
+        renovation_kpis=renovation,
+        renovation_changes=[("glazing", "Old double glazing", "Triple glazing")],
+        comparison=comparison,
+    )
+    assert '"heating_system": {"kind": "without_storage", "uses": "gas", "final_energy_kwh": 11000.0' in text
+    assert '"heat_per_unit_of_fuel": 0.8' in text and '"cost_eur_per_year": 1100' in text
+    assert '"share_percent": {"walls": 40, "windows": 30}' in text
+    assert '"generator_kw": 12.0' in text
+    assert "Renovation changes:\n- glazing: Old double glazing -> Triple glazing" in text
+    assert "Renovation results (the house after the renovation, rounded):" in text
+    assert '"saving_percent": 56' in text
+    assert "zones" not in text and text.endswith("Assumptions:\n- weather: Uccle")
+
+
+def test_interpret_input_without_a_system_carries_the_note() -> None:
+    kpis = {
+        "heating_energy_kwh": 1.0,
+        "heating_energy_kwh_per_m2": 1.0,
+        "peak_heating_w": 1.0,
+        "system": {"kind": "ideal", "fuel": None},
+        "energy": {"fuel": None, "note": "no heating system stated"},
+    }
+    text = interpret_input(kpis=kpis, brief=HouseBrief(), provenance={}, assumptions=[], language="Dutch")
+    assert '"heating_system": {"kind": "none stated", "note": "no heating system stated"}' in text
+    assert "Renovation" not in text
