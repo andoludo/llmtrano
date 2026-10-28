@@ -34,7 +34,7 @@ def test_unknown_must_be_defaulted_first() -> None:
 
 
 def test_mass_flow_and_schedule() -> None:
-    """150 m3/h at 1.2 kg/m3 is 0.05 kg/s, the system D flow of trano's reference house (300 m3 at 0.5 1/h)."""
+    """150 m3/h at 1.2 kg/m3 is 0.05 kg/s: the system D flow of trano's reference house (300 m3, 0.5 1/h)."""
     flow = mass_flow_kg_s(0.5, 300.0)
     assert flow == pytest.approx(0.05)
     assert ventilation_schedule(flow) == "[0, 0.05; 86400, 0.05]"

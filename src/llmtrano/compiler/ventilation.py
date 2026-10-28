@@ -22,7 +22,7 @@ HEAT_RECOVERY = 0.8  # residential_cases.HEAT_RECOVERY: effectiveness of the sys
 N50_TO_ACH = 20.0  # trano's default ratio between n50 and the infiltration rate
 AIR_DENSITY = 1.2  # [kg/m3] as residential_cases.py (flow = m3/h x 1.2 / 3600)
 DAY_S = 86_400
-# System D pressure drops of residential_cases.py: 50 Pa per duct, 100 Pa in the heat exchanger, fans at 150 Pa
+# System D pressure drops of residential_cases.py: 50 Pa per duct, 100 Pa in the exchanger, fans at 150 Pa
 DUCT_DP_PA = 50
 AHU_DP_PA = 100
 FAN_DP_PA = 150
@@ -83,8 +83,8 @@ def describe(ventilation: Ventilation, n50: float) -> str:
             )
         case Ventilation.balanced_heat_recovery:
             return (
-                f"ventilation: balanced {HYGIENE_ACH:g} 1/h with {HEAT_RECOVERY:.0%} heat recovery (system D) on "
-                f"top of {infiltration:g} 1/h of infiltration"
+                f"ventilation: balanced {HYGIENE_ACH:g} 1/h with {HEAT_RECOVERY:.0%} heat recovery "
+                f"(system D) on top of {infiltration:g} 1/h of infiltration"
             )
         case Ventilation.unknown:
             raise ValueError("ventilation 'unknown' has no description")

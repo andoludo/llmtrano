@@ -21,6 +21,7 @@ from llmtrano.brief.model import (
     Period,
     Source,
     Ventilation,
+    Zoning,
 )
 from llmtrano.compiler.compile import BriefNotReadyError, compile_brief, heating_schedule
 
@@ -233,6 +234,59 @@ def test_ventilation_kinds_pass_trano_schema_and_generate_modelica(
         assert space["parameters"]["ventilation_schedule"].startswith("[0, ")
         assert "ventilationSchedule" in modelica
     assert any(line.startswith("ventilation:") for line in compiled.assumptions)
+
+
+def test_day_and_night_zones_compile_to_two_spaces(tmp_path: Path) -> None:
+    brief = FIXTURES["semi_detached_1980s"].model_copy(
+        update={"zoning": Zoning.day_night, "main_window_orientation": Orientation.south}
+    )
+    compiled = compile_brief(brief, {})
+    model = compiled.model_dict
+    assert [space["id"] for space in model["spaces"]] == ["DAY:001", "NIGHT:001"]
+    day, night = model["spaces"]
+    assert day["emissions"][0]["ideal_heating_cooling"]["id"] == "HEATING_DAY:001"
+    assert (
+        "floor_on_grounds" in day["external_boundaries"]
+        and "floor_on_grounds" not in night["external_boundaries"]
+    )
+    assert [w["tilt"] for w in night["external_boundaries"]["external_walls"]][-1] == "ceiling"
+    # the night zone: 18 degC from 6 to 23 h, the user's 17 degC setback otherwise; occupied outside the day
+    assert night["emissions"][0]["ideal_heating_cooling"]["parameters"]["heating_setpoint_schedule"] == (
+        "[0, 290.15; 21600, 290.15; 21600, 291.15; 82800, 291.15; 82800, 290.15; 86400, 290.15]"
+    )
+    assert night["occupancy"]["parameters"] == {
+        "occupancy": "3600*{0, 7, 23, 24}",
+        "heat_gain_if_occupied": "2/120",
+    }
+    assert model["internal_walls"] == [
+        {
+            "space_1": "NIGHT:001",
+            "space_2": "DAY:001",
+            "construction": "INTERMEDIATE_FLOOR:001",
+            "surface": 60.0,
+            "space_1_tilt": "floor",
+            "space_2_tilt": "ceiling",
+        }
+    ]
+    assert "INTERMEDIATE_FLOOR:001" in {c["id"] for c in model["constructions"]}
+    assert set(compiled.sizing["zones"]) == {"DAY", "NIGHT"}
+    assert compiled.sizing["heater_capacity_w"] == sum(
+        z["heater_capacity_w"] for z in compiled.sizing["zones"].values()
+    )
+    assert any(line.startswith("day zone on the ground floor") for line in compiled.assumptions)
+    assert any(line.startswith("50% of the window area") for line in compiled.assumptions)
+    validate_schema(yaml.safe_load(compiled.yaml_text))
+    path = tmp_path / "model.yaml"
+    path.write_text(compiled.yaml_text)
+    network = convert_network("zones_check", path, library=Library.from_configuration("Buildings"))
+    assert "night_001" in network.model()
+
+
+def test_day_night_on_one_storey_is_noted() -> None:
+    brief = FIXTURES["semi_detached_1980s"].model_copy(update={"zoning": Zoning.day_night, "storeys": 1})
+    compiled = compile_brief(brief, {})
+    assert [space["id"] for space in compiled.model_dict["spaces"]] == ["HOUSE:001"]
+    assert "one storey: the house is one zone" in "\n".join(compiled.assumptions)
 
 
 def test_extract_ventilation_adds_half_an_air_change() -> None:
