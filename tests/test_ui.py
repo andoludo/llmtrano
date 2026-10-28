@@ -157,3 +157,105 @@ def test_api_client_round_trip() -> None:
 def test_ui_builds() -> None:
     api = ApiClient("http://api", transport=httpx.MockTransport(lambda r: httpx.Response(503)))
     assert build_ui(api, Settings()) is not None
+
+
+# ---------- phase 2: the renovation column, two scenarios and the split
+
+
+def test_card_renovation_column() -> None:
+    glazing = {
+        "field": "glazing",
+        "value": "Old double glazing",
+        "source": "user",
+        "evidence": "double",
+        "basis": None,
+        "conflict": False,
+        "renovation": "Triple glazing",
+        "renovation_evidence": "we want <triple>",
+    }
+    storeys = {**glazing, "field": "storeys", "value": "2", "renovation": None, "renovation_evidence": None}
+    card = {
+        "rows": [glazing, storeys],
+        "assumptions": [],
+        "missing_required": [],
+        "conflicts": [],
+        "ready": True,
+    }
+    text = card_html(card)
+    assert "<th>After renovation</th>" in text
+    assert 'title="we want &lt;triple&gt;" class="badge-renovation">Triple glazing' in text
+    assert text.count("<td></td>") == 1  # storeys: no change
+    assert "After renovation" not in card_html(CARD)  # no plans: no column
+
+
+BASELINE_KPIS = {
+    "heating_energy_kwh": 9000.0,
+    "heating_energy_kwh_per_m2": 75.0,
+    "peak_heating_w": 6000.0,
+    "heated_floor_area_m2": 120.0,
+    "energy": {"fuel": "gas", "final_energy_kwh": 11000.0, "cost_eur": 1100, "co2_kg": 2222, "note": None},
+    "heat_loss_split": {
+        "share_percent": {"walls": 40, "air": 10},
+        "estimated_kwh": {"walls": 3600, "air": 900},
+    },
+}
+
+
+def test_kpi_table_with_two_scenarios_cost_and_split() -> None:
+    renovation = {
+        **BASELINE_KPIS,
+        "heating_energy_kwh": 4000.0,
+        "heating_energy_kwh_per_m2": 33.3,
+        "energy": {"fuel": "gas", "final_energy_kwh": 4900.0, "cost_eur": 490, "co2_kg": 990},
+    }
+    comparison = {
+        "heating_energy_kwh": {
+            "baseline": 9000.0,
+            "renovation": 4000.0,
+            "saving": 5000.0,
+            "saving_percent": 56,
+        },
+        "cost_eur": {"baseline": 1100, "renovation": 490, "saving": 610, "saving_percent": 55},
+    }
+    table = kpi_markdown(BASELINE_KPIS, renovation, comparison)
+    assert "| Result (one year, Uccle weather) | House as it is | After the renovation | Saving |" in table
+    assert "| Heating energy | 9,000 kWh | 4,000 kWh | 5,000 kWh (56%) |" in table
+    assert "| Final energy (gas) | 11,000 kWh | 4,900 kWh | - |" in table  # no comparison row given
+    assert (
+        "| Energy cost (at the prices assumed) | 1,100 EUR/year | 490 EUR/year | 610 EUR/year (55%) |"
+        in table
+    )
+    assert "| Walls | 40% | 3,600 |" in table and "| Air | 10% | 900 |" in table
+    single = kpi_markdown(BASELINE_KPIS)
+    assert (
+        "After the renovation" not in single and "| CO2 (at the factors assumed) | 2,222 kg/year |" in single
+    )
+
+
+def test_kpi_table_without_a_system_shows_the_note() -> None:
+    kpis = {
+        "heating_energy_kwh": 1.0,
+        "heating_energy_kwh_per_m2": 1.0,
+        "peak_heating_w": 1.0,
+        "heated_floor_area_m2": 1.0,
+        "energy": {"fuel": None, "note": "no heating system stated"},
+    }
+    table = kpi_markdown(kpis)
+    assert "_no heating system stated_" in table and "Final energy" not in table
+
+
+def test_view_keeps_both_scenarios_and_the_comparison() -> None:
+    view, reply = View(), {}
+    for event in [
+        SseEvent("run_phase", {"phase": "simulating", "kind": "simulate", "scenario": "baseline"}),
+        SseEvent("kpis", {"kpis": {"heating_energy_kwh": 9.0}, "scenario": "baseline"}),
+        SseEvent("run_phase", {"phase": "simulating", "kind": "simulate", "scenario": "renovation"}),
+        SseEvent("kpis", {"kpis": {"heating_energy_kwh": 4.0}, "scenario": "renovation"}),
+        SseEvent("comparison", {"comparison": {"heating_energy_kwh": {"saving": 5.0}}}),
+    ]:
+        view.apply(event, reply)
+    assert (view.kpis, view.renovation_kpis) == ({"heating_energy_kwh": 9.0}, {"heating_energy_kwh": 4.0})
+    assert view.comparison == {"heating_energy_kwh": {"saving": 5.0}}
+    assert view.progress == ["simulate: simulating", "simulate (renovation): simulating"]
+    view.apply(SseEvent("kpis", {"kpis": {"heating_energy_kwh": 8.0}, "scenario": "baseline"}), reply)
+    assert view.renovation_kpis is None and view.comparison is None  # a new baseline clears the rest

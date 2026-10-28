@@ -3,7 +3,8 @@
 - ``POST /sessions`` -> ``{"id"}``.
 - ``POST /sessions/{id}/messages`` -> SSE: ``token`` while the reply streams, then ``brief`` (the card),
   ``questions`` (with their options) and ``phase``. During the confirmation, a message reopens the intake.
-- ``POST /sessions/{id}/confirm`` with ``{approved, edits}`` -> SSE: ``run_phase``, ``kpis``, ``token`` (the
+- ``POST /sessions/{id}/confirm`` with ``{approved, edits}`` -> SSE: ``run_phase`` and ``kpis`` (each with
+  its ``scenario``: the baseline, then the renovation when planned), ``comparison``, ``token`` (the
   interpretation), ``guardrail`` (when it triggered), ``explanation``, then ``brief``, ``questions``,
   ``phase``.
 - ``GET /sessions/{id}``: the state for a reload. ``POST /feedback``: thumbs up or down on a message.
@@ -77,6 +78,10 @@ class SessionOut(BaseModel):
     kpis: dict[str, Any] | None
     explanation: str | None
     run_id: uuid.UUID | None
+    # phase 2: the renovation scenario and its comparison with the baseline, when simulated
+    renovation_kpis: dict[str, Any] | None = None
+    comparison: dict[str, Any] | None = None
+    renovation_run_id: uuid.UUID | None = None
 
 
 def _locks(request: Request) -> defaultdict[str, asyncio.Lock]:
@@ -134,10 +139,20 @@ async def _state(graph: Graph, session_id: uuid.UUID) -> tuple[WorkflowState | N
     return state, bool(snapshot.interrupts)
 
 
+def _card(state: WorkflowState) -> dict[str, Any]:
+    card = build_card(
+        state.brief,
+        state.provenance,
+        state.conflicts,
+        ready=state.phase is Phase.confirm,
+        renovation_facts=state.renovation_facts,
+    )
+    return card.model_dump(mode="json")
+
+
 def _closing_events(state: WorkflowState) -> list[ServerSentEvent]:
-    card = build_card(state.brief, state.provenance, state.conflicts, ready=state.phase is Phase.confirm)
     return [
-        ServerSentEvent(event="brief", data=card.model_dump(mode="json")),
+        ServerSentEvent(event="brief", data=_card(state)),
         ServerSentEvent(event="questions", data=[q.model_dump(mode="json") for q in state.pending_questions]),
         ServerSentEvent(event="phase", data={"phase": state.phase.value}),
     ]
@@ -207,16 +222,18 @@ async def confirm(
 async def get_session(session_id: SessionId, request: Request) -> SessionOut:
     state, _ = await _state(_graph(request), session_id)
     state = state or WorkflowState(session_id=str(session_id))
-    card = build_card(state.brief, state.provenance, state.conflicts, ready=state.phase is Phase.confirm)
     return SessionOut(
         id=session_id,
         phase=state.phase,
-        card=card.model_dump(mode="json"),
+        card=_card(state),
         questions=[q.model_dump(mode="json") for q in state.pending_questions],
         messages=[m.model_dump() for m in state.recent_messages],
         kpis=state.kpis,
         explanation=state.explanation,
         run_id=state.run_id,
+        renovation_kpis=state.renovation_kpis,
+        comparison=state.comparison,
+        renovation_run_id=state.renovation_run_id,
     )
 
 

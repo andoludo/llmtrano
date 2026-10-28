@@ -17,7 +17,7 @@ from sqlalchemy.pool import StaticPool
 from test_workflow import FakeJobs, facts
 
 from llmtrano.api.app import Services, create_app
-from llmtrano.db.models import Base, Feedback, Message, Run, RunStatus
+from llmtrano.db.models import Base, Feedback, HouseBriefRow, Message, Run, RunStatus
 from llmtrano.db.recorder import DbRecorder
 from llmtrano.settings import Settings
 from llmtrano.workflow.deps import Deps
@@ -303,3 +303,50 @@ def test_feedback(harness: Harness) -> None:
     missing = {"message_id": str(uuid.uuid4()), "thumbs": 1}
     assert harness.client.post("/feedback", json=missing).status_code == 404
     assert harness.client.post("/feedback", json={"message_id": message_id, "thumbs": 0}).status_code == 422
+
+
+# ---------- phase 2: the renovation scenario through the api
+
+
+def test_confirm_with_renovation_plans_runs_both_scenarios(harness: Harness) -> None:
+    session_id = harness.session()
+    harness.llm.queue(
+        "extract",
+        facts(
+            ("building_type", "detached", "baseline"),
+            ("construction_period", "1985", "baseline"),
+            ("heated_floor_area_m2", "140 m2", "baseline"),
+            ("storeys", "2", "baseline"),
+            ("roof_insulation", "22 cm", "renovation"),
+            complete=True,
+        ),
+    )
+    harness.llm.queue("respond", "Noted, the roof insulation is planned. Please confirm.")
+    events = harness.stream(
+        f"/sessions/{session_id}/messages",
+        {"message": "Detached, 1985, 140 m2, 2 floors; we plan 22 cm on the roof."},
+    )
+    card = _data(events, "brief")
+    assert card["renovation_fields"] == ["roof_insulation"]
+    assert {r["field"]: r.get("renovation") for r in card["rows"]}[
+        "roof_insulation"
+    ] == "Good (renovated or recent)"
+    harness.llm.queue("interpret", "Now 6469 kWh; after the roof 6469 kWh too in this fake.")
+    events = harness.stream(f"/sessions/{session_id}/confirm", {"approved": True})
+    scenarios = [data["scenario"] for name, data in events if name == "kpis"]
+    assert scenarios == ["baseline", "renovation"]
+    assert [d["scenario"] for n, d in events if n == "run_phase" and d["phase"] == "simulating"] == [
+        "baseline",
+        "renovation",
+    ]
+    assert _data(events, "comparison")["comparison"]["heating_energy_kwh"]["saving"] == 0.0
+    assert _data(events, "phase") == {"phase": "done"}
+    state = harness.client.get(f"/sessions/{session_id}").json()
+    assert state["renovation_kpis"]["heating_energy_kwh"] == 6469.2
+    assert state["comparison"]["heating_energy_kwh"]["saving_percent"] == 0
+    assert state["renovation_run_id"] is not None and state["run_id"] != state["renovation_run_id"]
+    with harness.sessions() as session:
+        runs = session.scalars(select(Run).order_by(Run.created_at)).all()
+        assert [r.scenario for r in runs] == []  # fake jobs: no rows; the recorder wrote the Briefs
+        briefs = session.scalars(select(HouseBriefRow).order_by(HouseBriefRow.version)).all()
+        assert [b.scenario for b in briefs] == ["baseline", "renovation"]
