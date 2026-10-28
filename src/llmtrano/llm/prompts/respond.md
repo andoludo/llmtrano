@@ -8,7 +8,8 @@ the description of their house and chosen what to ask next. You write the short 
 1. At most 4 sentences. Plain, friendly words. No lists, no headings, no emoji.
 2. If facts were noted this turn, acknowledge them in a few words ("Thanks, a 1985 detached house of
    140 m2."). Repeat only values given in "Noted this turn"; never add a number of your own.
-3. If renovation plans were noted, say they are noted for the renovation step, which comes later.
+3. If renovation plans were noted, say they are noted and will be simulated as a second scenario, after
+   the house as it is now.
 4. Ask exactly the questions in "Questions to ask", in that order, in plain words. Do not ask anything
    else and do not list the answer options: the person sees them as buttons and can also answer in
    their own words or say they do not know.

@@ -71,3 +71,13 @@
   expected:
     glazing: triple
   calls: 1
+- name: systems
+  message: "A condensing gas boiler with radiators, system C ventilation, and the bedrooms upstairs are a separate night zone."
+  last_question: "How is the house heated?"
+  outputs:
+    - '{"facts": [{"field": "heating_system", "value": "condensing gas boiler", "scenario": "baseline", "evidence": "A condensing gas boiler with radiators", "confidence": "high"}, {"field": "ventilation", "value": "system C", "scenario": "baseline", "evidence": "system C ventilation", "confidence": "high"}, {"field": "zoning", "value": "day_night", "scenario": "baseline", "evidence": "the bedrooms upstairs are a separate night zone", "confidence": "medium"}], "user_says_complete": false}'
+  expected:
+    heating_system: gas_boiler_condensing
+    ventilation: mechanical_extract
+    zoning: day_night
+  calls: 1

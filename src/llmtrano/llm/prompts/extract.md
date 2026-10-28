@@ -36,6 +36,12 @@ Synonyms: "rijwoning" or "row house" is terraced; "halfopen bebouwing" or "twee-
 semi_detached; "open bebouwing" or "vrijstaand" is detached; "flat" or "appartement" is apartment;
 "dubbel glas" is double_old; "HR glas", "HR++" or "low-e" is double_low_e; "driedubbel glas" is triple;
 "enkel glas" is single; "spouwmuurisolatie" is wall insulation; "zolder" is the attic.
+Ventilation: "systeem C", "VMC simple flux" or extractor fans is mechanical_extract; "systeem D",
+"warmteterugwinning", "VMC double flux" or heat recovery is balanced_heat_recovery; opening windows or
+grilles only is natural. Heating: "warmtepomp" or "pompe à chaleur" is heat_pump_air_water;
+"condensatieketel" or "chaudière à condensation" is gas_boiler_condensing; an old or plain gas boiler
+("gasketel", "chaudière au gaz") is gas_boiler_old. A separate night zone for the bedrooms is
+zoning day_night. "Big windows to the south" gives main_window_orientation south.
 
 # Examples
 
@@ -54,3 +60,7 @@ Message: "The attic has maybe 6 cm of wool, and next year we want to put triple 
 Last question asked: What is the heated floor area?
 Message: "Sorry, I said 120 before but it is about 135 m2. That's all I know."
 {"facts": [{"field": "heated_floor_area_m2", "value": "135 m2", "scenario": "baseline", "evidence": "it is about 135 m2", "confidence": "medium"}], "user_says_complete": true}
+
+Last question asked: How is the house heated?
+Message: "A condensing gas boiler with radiators, and the bathroom has an extractor fan. The big windows face the garden, to the south."
+{"facts": [{"field": "heating_system", "value": "gas_boiler_condensing", "scenario": "baseline", "evidence": "A condensing gas boiler with radiators", "confidence": "high"}, {"field": "ventilation", "value": "mechanical_extract", "scenario": "baseline", "evidence": "the bathroom has an extractor fan", "confidence": "medium"}, {"field": "main_window_orientation", "value": "south", "scenario": "baseline", "evidence": "The big windows face the garden, to the south", "confidence": "high"}], "user_says_complete": false}
