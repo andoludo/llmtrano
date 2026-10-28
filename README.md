@@ -4,9 +4,12 @@ A local-first LLM assistant that turns a plain-language house description into a
 [trano](https://github.com/andoludo/trano) building model, simulates it with OpenModelica and explains
 the result. Phase 1 is the golden path: describe one house in the chat, answer a few questions, confirm the
 House Brief card, and get a one-year heating simulation with an explanation whose every number comes from
-the simulation. Every service runs locally, both models answer through one OpenAI-compatible endpoint, and
-trano simulates inside the `worker` container without the Docker socket. The workflow graph is in
-[docs/workflow.md](docs/workflow.md); what each step does is in [docs/phase-1-notes.md](docs/phase-1-notes.md).
+the simulation. Phase 2 adds ventilation, day and night zones, gas boilers and heat pumps on radiators, the
+renovation you describe as a second scenario with its savings, a heat-loss split, the energy cost and the
+CO2. Every service runs locally, both models answer through one OpenAI-compatible endpoint, and trano
+simulates inside the `worker` container without the Docker socket. The workflow graph is in
+[docs/workflow.md](docs/workflow.md); what each step does is in [docs/phase-1-notes.md](docs/phase-1-notes.md)
+and [docs/phase-2-notes.md](docs/phase-2-notes.md).
 
 Project rules for contributors (human or Claude Code) are in [CLAUDE.md](CLAUDE.md); the phase plans are
 in [docs/](docs/).
