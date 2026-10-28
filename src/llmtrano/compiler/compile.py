@@ -14,7 +14,14 @@ import yaml
 from pydantic import BaseModel, ConfigDict
 
 from llmtrano.brief.defaults import NO_DEFAULT, apply_defaults, assumptions
-from llmtrano.brief.model import Airtightness, BuildingType, HouseBrief, Provenance, missing_required
+from llmtrano.brief.model import (
+    Airtightness,
+    BuildingType,
+    HouseBrief,
+    Provenance,
+    Ventilation,
+    missing_required,
+)
 from llmtrano.compiler.constructions import (
     ASSUMED_GLAZINGS,
     FRAME_FRACTION,
@@ -31,10 +38,22 @@ from llmtrano.compiler.constructions import (
 )
 from llmtrano.compiler.geometry import ASSUMPTIONS as GEOMETRY_ASSUMPTIONS
 from llmtrano.compiler.geometry import Surface, SurfaceKind, build_geometry
-from llmtrano.compiler.sizing import design_heat_loss_w, heating_capacity_w
+from llmtrano.compiler.sizing import design_heat_loss, heating_capacity_w
+from llmtrano.compiler.ventilation import (
+    AHU_DP_PA,
+    DUCT_DP_PA,
+    FAN_DP_PA,
+    HEAT_RECOVERY,
+    HYGIENE_ACH,
+    describe,
+    mass_flow_kg_s,
+    scheduled_ach,
+    ventilation_schedule,
+)
 
 SPACE_ID = "HOUSE:001"
 HEATING_ID = "HEATING:001"
+AHU_ID = "AHU:001"
 # residential_before_renovation.yaml: Uccle typical year (TMYx 2007-2021) shipped with IDEAS
 WEATHER_PATH = (
     'Modelica.Utilities.Files.loadResource("modelica://IDEAS/Resources/weatherdata/'
@@ -69,6 +88,7 @@ class CompiledModel(BaseModel):
     model_dict: dict[str, Any]
     assumptions: list[str]
     schema_hash: str  # sha256 of trano's trano_final.yaml in the installed trano
+    sizing: dict[str, Any] = {}  # design heat loss per element [W] and the capacities written (phase 2)
 
 
 @cache
@@ -89,11 +109,13 @@ def compile_brief(brief: HouseBrief, provenance: Provenance) -> CompiledModel:
     if brief.building_type is BuildingType.apartment:
         raise BriefNotReadyError("apartments are not supported yet")
     brief, provenance = apply_defaults(brief, provenance)
-    model = model_dict(brief)
+    model, sizing = build_model(brief)
+    values = _filled(brief)
     notes = [
         *assumptions(brief, provenance),
         *GEOMETRY_ASSUMPTIONS,
         *FIXED_ASSUMPTIONS,
+        describe(values["ventilation"], N50[values["airtightness"]]),
         *([ASSUMED_GLAZINGS[brief.glazing]] if brief.glazing in ASSUMED_GLAZINGS else []),
     ]
     if brief.municipality:
@@ -103,11 +125,17 @@ def compile_brief(brief: HouseBrief, provenance: Provenance) -> CompiledModel:
         model_dict=model,
         assumptions=notes,
         schema_hash=trano_schema_hash(),
+        sizing=sizing,
     )
 
 
 def model_dict(brief: HouseBrief) -> dict[str, Any]:
     """The trano model of a Brief whose fields are all filled (after ``apply_defaults``)."""
+    return build_model(brief)[0]
+
+
+def build_model(brief: HouseBrief) -> tuple[dict[str, Any], dict[str, Any]]:
+    """The trano model and the sizing record of a Brief whose fields are all filled."""
     values = _filled(brief)
     geometry = build_geometry(
         building_type=values["building_type"],
@@ -122,17 +150,19 @@ def model_dict(brief: HouseBrief) -> dict[str, Any]:
     floor = construction(Element.floor, values["floor_insulation"])
     window = glazing(values["glazing"])
     n50 = N50[values["airtightness"]]
-    capacity = heating_capacity_w(
-        design_heat_loss_w(
-            geometry,
-            wall=values["wall_insulation"],
-            roof=values["roof_insulation"],
-            floor=values["floor_insulation"],
-            glazing=values["glazing"],
-            n50=n50,
-            setpoint_c=values["heating_setpoint_day_c"],
-        )
+    ventilation: Ventilation = values["ventilation"]
+    loss = design_heat_loss(
+        geometry,
+        wall=values["wall_insulation"],
+        roof=values["roof_insulation"],
+        floor=values["floor_insulation"],
+        glazing=values["glazing"],
+        n50=n50,
+        setpoint_c=values["heating_setpoint_day_c"],
+        ventilation=ventilation,
     )
+    capacity = heating_capacity_w(loss.total_w)
+    volume = geometry.footprint_m2 * geometry.facade_height_m
     constructions = [wall, roof, floor, *([PARTY_WALL] if geometry.of(SurfaceKind.party_wall) else [])]
 
     material_ids = _unique(layer.material for c in constructions for layer in c.layers)
@@ -140,6 +170,14 @@ def model_dict(brief: HouseBrief) -> dict[str, Any]:
     gas_ids = _unique(layer.gas for layer in window.layers if isinstance(layer, GasLayer))
 
     floor_area = float(values["heated_floor_area_m2"])
+    parameters: dict[str, Any] = {
+        "floor_area": floor_area,
+        "average_room_height": float(values["room_height_m"]),
+        "n50": n50,
+    }
+    airing = scheduled_ach(n50, ventilation)
+    if airing > 0:
+        parameters["ventilation_schedule"] = ventilation_schedule(mass_flow_kg_s(airing, volume))
     boundaries: dict[str, list[dict[str, Any]]] = {
         "external_walls": [
             *(_wall(surface, wall) for surface in geometry.of(SurfaceKind.external_wall)),
@@ -161,14 +199,10 @@ def model_dict(brief: HouseBrief) -> dict[str, Any]:
         ],
         "adiabatic_walls": [_wall(s, PARTY_WALL) for s in geometry.of(SurfaceKind.party_wall)],
     }
-    space = {
+    space: dict[str, Any] = {
         "id": SPACE_ID,
         "variant": "infiltration",
-        "parameters": {
-            "floor_area": floor_area,
-            "average_room_height": float(values["room_height_m"]),
-            "n50": n50,
-        },
+        "parameters": parameters,
         "occupancy": {
             "parameters": {
                 "occupancy": f"3600*{{{values['day_start_h']}, {values['day_end_h']}}}",
@@ -194,7 +228,19 @@ def model_dict(brief: HouseBrief) -> dict[str, Any]:
         ],
         "external_boundaries": {key: items for key, items in boundaries.items() if items},
     }
-    return {
+    systems: list[dict[str, Any]] = []
+    if ventilation is Ventilation.balanced_heat_recovery:
+        supply_flow = mass_flow_kg_s(HYGIENE_ACH, volume)
+        space["ventilation_inlets"] = [_duct(f"DUCT_SUPPLY_{_zone_name(SPACE_ID)}:001", supply_flow)]
+        space["ventilation_outlets"] = [_duct(f"DUCT_EXTRACT_{_zone_name(SPACE_ID)}:001", supply_flow)]
+        systems.append(
+            _air_handling_unit(
+                supply_flow,
+                extracts=[f"DUCT_EXTRACT_{_zone_name(SPACE_ID)}:001"],
+                supplies=[f"DUCT_SUPPLY_{_zone_name(SPACE_ID)}:001"],
+            )
+        )
+    model: dict[str, Any] = {
         "material": [MATERIALS[i].model_dump() for i in material_ids],
         "constructions": [c.model_dump(mode="json") for c in constructions],
         "glass_material": [_glass_dict(i) for i in glass_ids],
@@ -202,6 +248,50 @@ def model_dict(brief: HouseBrief) -> dict[str, Any]:
         "glazings": [window.model_dump(mode="json")],
         "weather": {"parameters": {"path": WEATHER_PATH}},
         "spaces": [space],
+    }
+    if systems:
+        model["systems"] = systems
+    sizing = {
+        "design_outdoor_temperature_c": -8.0,
+        "design_heat_loss_w": round(loss.total_w),
+        "design_heat_loss_by_element_w": {k: round(v) for k, v in loss.by_element().items()},
+        "heat_loss_share": {k: round(v, 3) for k, v in loss.shares().items()},
+        "heater_capacity_w": capacity,
+        "ventilation_ach": {
+            "infiltration": round(n50 / 20, 3),
+            "scheduled": round(airing, 3),
+            "heat_recovery": HEAT_RECOVERY if ventilation is Ventilation.balanced_heat_recovery else 0.0,
+        },
+    }
+    return model, sizing
+
+
+def _zone_name(space_id: str) -> str:
+    return space_id.split(":")[0]
+
+
+def _duct(duct_id: str, mass_flow: float) -> dict[str, Any]:
+    return {
+        "duct": {"id": duct_id, "parameters": {"nominal_mass_flow_rate": mass_flow, "dp_nominal": DUCT_DP_PA}}
+    }
+
+
+def _air_handling_unit(total_flow: float, *, extracts: list[str], supplies: list[str]) -> dict[str, Any]:
+    """System D of trano's after-renovation case: balanced flow, heat recovery, fans at 150 Pa."""
+    return {
+        "air_handling_unit": {
+            "id": AHU_ID,
+            "variant": "system_d",
+            "parameters": {
+                "m_flow_nominal": total_flow,
+                "dp_nominal": AHU_DP_PA,
+                "supply_dp_nominal": FAN_DP_PA,
+                "return_dp_nominal": FAN_DP_PA,
+                "heat_exchanger_effectiveness": HEAT_RECOVERY,
+            },
+            "inlets": extracts,
+            "outlets": supplies,
+        }
     }
 
 
