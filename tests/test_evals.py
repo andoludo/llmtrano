@@ -23,9 +23,10 @@ from llmtrano.workflow.state import WorkflowState
 CASES = Path(__file__).parents[1] / "evals" / "cases"
 
 
-def test_the_eval_set_has_the_ten_planned_cases() -> None:
-    cases = {case.id: case for case in load_cases(CASES)}
+def test_the_eval_set_has_the_planned_cases() -> None:
+    cases = {case.id: case for case in load_cases(CASES) if not case.generated}
     assert set(cases) == {
+        # phase 1
         "tutorial_house",
         "vague_1960s_semi",
         "precise_terraced",
@@ -36,11 +37,21 @@ def test_the_eval_set_has_the_ten_planned_cases() -> None:
         "apartment",
         "contradictory_area",
         "unusual_units",
+        # phase 2
+        "reference_house",
+        "gas_boiler_house",
+        "heat_pump_day_night",
+        "system_d_ventilation",
+        "french_maison",
     }
-    assert [c.id for c in cases.values() if c.gate] == ["tutorial_house"]
+    assert sorted(c.id for c in cases.values() if c.gate) == ["reference_house", "tutorial_house"]
     assert cases["apartment"].outcome == "unsupported"
     assert cases["mixed_renovation"].renovation == {"wall_insulation": "good", "glazing": "triple"}
-    assert {c.language for c in cases.values()} == {"English", "Dutch"}
+    assert {c.language for c in cases.values()} == {"English", "Dutch", "French"}
+    gate = cases["reference_house"]
+    assert gate.outcome == "compare" and gate.reference is not None
+    assert (gate.reference.heating_kwh_per_m2, gate.reference.renovation_heating_kwh_per_m2) == (130, 17.6)
+    assert gate.renovation["heating_system"] == "heat_pump_air_water"
 
 
 def test_unknown_fields_are_rejected() -> None:
@@ -123,7 +134,7 @@ async def test_run_case_scores_a_simulated_case() -> None:
     assert result.turns_to_confirmation == 1
     assert all(check.ok for check in result.fields.values()), result.fields
     assert result.compiled and result.check_ok and result.simulation_ok and result.guardrail_first_time
-    assert result.kpis == KPIS
+    assert result.kpis is not None and {key: result.kpis[key] for key in KPIS} == KPIS
     assert len(result.ttft_ms) == 1 and len(result.turn_s) == 1
     assert result.transcript[0] == {"role": "user", "content": case.opening}
 
@@ -178,7 +189,8 @@ def test_summary_and_markdown() -> None:
     )
     text = markdown(summary, results, {"date": "2026-10-20", "interactive model": "m"})
     assert "| Field accuracy | 67% (2/3) |" in text
-    assert "| a | simulated | 3 | 1/2 | 1/1 | 6,469 | no |" in text
+    assert "| a | simulated | 3 | 1/2 | 1/1 | 6,469 | - | no |" in text
+    assert summary.renovation_success is None and summary.reference_checks_ok is None
     assert "- a.occupants: expected 2, got 3" in text
 
 
@@ -193,3 +205,37 @@ def test_percentile_and_gate_comparison() -> None:
     )
     comparison = gate_comparison(gate, {"heating_energy_kwh": 6000.0, "peak_heating_w": 3500.0})
     assert comparison is not None and comparison["difference"] == "-16.7%"
+
+
+async def test_run_case_compares_the_renovation_and_checks_the_reference() -> None:
+    from test_workflow import ScenarioJobs
+
+    case = next(c for c in load_cases(CASES) if c.id == "reference_house")
+    llm = FakeLLM()
+    baseline = {name: str(value) for name, value in case.expected.items()}
+    plans = [
+        {"field": f, "value": str(v), "scenario": "renovation", "evidence": v, "confidence": "high"}
+        for f, v in case.renovation.items()
+    ]
+    llm.queue(
+        "extract",
+        json.dumps({"facts": [*json.loads(_facts(baseline))["facts"], *plans], "user_says_complete": True}),
+    )
+    llm.queue("respond", "All noted, please confirm.")
+    llm.queue("interpret", "Before 6469 kWh, after 3100 kWh.")
+    result = await run_case(
+        case, _graph(llm, ScenarioJobs(), NullRecorder()), "s3", model=None, simulate=True
+    )
+    assert result.outcome == "simulated" and result.renovation_simulated is True
+    assert result.renovation_kpis is not None and result.comparison is not None
+    assert all(check.ok for check in result.renovation.values()), result.renovation
+    metrics = {check.metric: check for check in result.reference_checks}
+    assert set(metrics) == {"heating_kwh_per_m2", "renovation_heating_kwh_per_m2"}
+    assert (
+        metrics["heating_kwh_per_m2"].got == 53.91 and metrics["heating_kwh_per_m2"].ok is False
+    )  # fake KPIs
+    assert "trano docs/validation" in metrics["heating_kwh_per_m2"].source
+    text = markdown(summarize([result]), [result], {"date": "d"})
+    assert "## Gate: simulated values against their published references" in text
+    assert "| reference_house | heating_kwh_per_m2 | 130 | 53.9 | 35% | no |" in text
+    assert "| Renovation simulated (compare cases) | 100% |" in text

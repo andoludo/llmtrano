@@ -56,6 +56,25 @@ class Orientation(StrEnum):
     west = "west"
 
 
+class Ventilation(StrEnum):
+    natural = "natural"
+    mechanical_extract = "mechanical_extract"
+    balanced_heat_recovery = "balanced_heat_recovery"
+    unknown = "unknown"
+
+
+class HeatingSystem(StrEnum):
+    gas_boiler_old = "gas_boiler_old"
+    gas_boiler_condensing = "gas_boiler_condensing"
+    heat_pump_air_water = "heat_pump_air_water"
+    unknown = "unknown"
+
+
+class Zoning(StrEnum):
+    one = "one"
+    day_night = "day_night"
+
+
 class HouseBrief(BaseModel):
     """Every field is None until filled."""
 
@@ -69,11 +88,18 @@ class HouseBrief(BaseModel):
         default=None, ge=20, le=1000, description="Heated floor area of all storeys together [m2]."
     )
     storeys: int | None = Field(default=None, ge=1, le=4, description="Number of heated storeys.")
+    zoning: Zoning | None = Field(
+        default=None,
+        description="One thermal zone, or a day zone (ground floor) and a night zone (the storeys above).",
+    )
     room_height_m: float | None = Field(
         default=None, ge=2.2, le=4.0, description="Floor to ceiling height of the rooms [m]."
     )
     street_facade_orientation: Orientation | None = Field(
         default=None, description="Direction the street facade faces."
+    )
+    main_window_orientation: Orientation | None = Field(
+        default=None, description='Facade with most of the glass ("big windows to the south").'
     )
     wall_insulation: InsulationLevel | None = Field(
         default=None, description="Insulation of the outside walls."
@@ -89,6 +115,16 @@ class HouseBrief(BaseModel):
         default=None, ge=0.05, le=0.6, description="Window area as a fraction of the gross facade area."
     )
     airtightness: Airtightness | None = Field(default=None, description="How draughty the house is.")
+    ventilation: Ventilation | None = Field(
+        default=None,
+        description="Natural (windows and grilles), mechanical extract (system C) or balanced with heat "
+        "recovery (system D).",
+    )
+    heating_system: HeatingSystem | None = Field(
+        default=None,
+        description="Old (non-condensing) gas boiler, condensing gas boiler or air-water heat pump, on "
+        "radiators.",
+    )
     heating_setpoint_day_c: float | None = Field(
         default=None, ge=15, le=25, description="Indoor temperature during the day [degC]."
     )
@@ -118,14 +154,18 @@ BriefField = Literal[
     "construction_period",
     "heated_floor_area_m2",
     "storeys",
+    "zoning",
     "room_height_m",
     "street_facade_orientation",
+    "main_window_orientation",
     "wall_insulation",
     "roof_insulation",
     "floor_insulation",
     "glazing",
     "window_to_wall_ratio",
     "airtightness",
+    "ventilation",
+    "heating_system",
     "heating_setpoint_day_c",
     "heating_setpoint_night_c",
     "day_start_h",
@@ -141,6 +181,7 @@ REQUIRED_FIELDS: tuple[str, ...] = ("building_type", "heated_floor_area_m2", "st
 class Source(StrEnum):
     user = "user"
     default = "default"
+    renovation = "renovation"  # a value of the renovation overlay (phase 2)
 
 
 Confidence = Literal["low", "medium", "high"]

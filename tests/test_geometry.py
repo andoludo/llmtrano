@@ -4,14 +4,18 @@ import math
 
 import pytest
 
-from llmtrano.brief.model import BuildingType, Orientation
+from llmtrano.brief.model import BuildingType, Orientation, Zoning
 from llmtrano.compiler.geometry import (
     AZIMUTH,
     Geometry,
+    HouseGeometry,
+    InternalFloor,
     SurfaceKind,
     build_geometry,
+    build_house,
     party_wall_facades,
     rotate,
+    window_areas,
 )
 
 
@@ -134,3 +138,72 @@ def test_zero_window_ratio_gives_no_window() -> None:
 def test_invalid_inputs(area: float, storeys: int, height: float, wwr: float) -> None:
     with pytest.raises(ValueError):
         _geometry(area=area, storeys=storeys, height=height, wwr=wwr)
+
+
+# ---------- phase 2: zones and window placement
+
+
+def _house(
+    zoning: Zoning = Zoning.day_night, storeys: int = 2, main: Orientation | None = None
+) -> HouseGeometry:
+    return build_house(
+        building_type=BuildingType.semi_detached,
+        heated_floor_area_m2=120.0,
+        storeys=storeys,
+        room_height_m=2.5,
+        street_facade_orientation=Orientation.north,
+        window_to_wall_ratio=0.2,
+        zoning=zoning,
+        main_window_orientation=main,
+    )
+
+
+def test_day_and_night_zones_split_the_storeys() -> None:
+    house = _house(storeys=3)
+    day, night = house.zones
+    assert (day.name, day.storeys, night.name, night.storeys) == ("DAY", 1, "NIGHT", 2)
+    assert day.floor_area_m2 + night.floor_area_m2 == pytest.approx(120.0)
+    assert day.facade_height_m == 2.5 and night.facade_height_m == 5.0
+    assert day.of(SurfaceKind.floor_on_ground) and not day.of(SurfaceKind.roof)
+    assert night.of(SurfaceKind.roof) and not night.of(SurfaceKind.floor_on_ground)
+    assert house.internal_floors == (InternalFloor(upper="NIGHT", lower="DAY", area_m2=40.0),)
+    whole = _house(Zoning.one, storeys=3).zones[0]
+    for kind in (SurfaceKind.external_wall, SurfaceKind.window, SurfaceKind.party_wall):
+        assert _area(day, kind) + _area(night, kind) == pytest.approx(_area(whole, kind), abs=0.05)
+
+
+def test_one_storey_house_stays_one_zone() -> None:
+    house = _house(storeys=1)
+    assert [zone.name for zone in house.zones] == ["HOUSE"] and house.internal_floors == ()
+
+
+def test_one_zone_is_the_phase_1_geometry() -> None:
+    assert _house(Zoning.one).zones[0] == _geometry(BuildingType.semi_detached, area=120.0)
+
+
+def test_main_window_orientation_moves_half_of_the_glass() -> None:
+    even = {s.facade: s.area_m2 for s in _house(Zoning.one).zones[0].of(SurfaceKind.window)}
+    south = {
+        s.facade: s.area_m2
+        for s in _house(Zoning.one, main=Orientation.south).zones[0].of(SurfaceKind.window)
+    }
+    assert sum(south.values()) == pytest.approx(sum(even.values()), abs=0.05)
+    assert south[Orientation.south] == pytest.approx(0.5 * sum(even.values()), abs=0.05)
+    assert south[Orientation.north] > south[Orientation.west]  # the rest follows the gross areas
+    assert set(south) == set(even)
+
+
+def test_main_window_on_a_party_wall_is_ignored() -> None:
+    even = {s.facade: s.area_m2 for s in _house(Zoning.one).zones[0].of(SurfaceKind.window)}
+    east = {
+        s.facade: s.area_m2 for s in _house(Zoning.one, main=Orientation.east).zones[0].of(SurfaceKind.window)
+    }
+    assert east == even
+
+
+def test_window_areas_are_capped_at_the_facade() -> None:
+    gross = {Orientation.north: 30.0, Orientation.south: 30.0, Orientation.west: 5.0}
+    areas = window_areas(gross, 0.6, Orientation.west)
+    assert areas[Orientation.west] == pytest.approx(4.0)  # 80% of 5 m2, not half of 39 m2
+    assert all(area <= 0.8 * gross[facade] for facade, area in areas.items())
+    assert window_areas({}, 0.2, None) == {} and window_areas(gross, 0, Orientation.west) == {}

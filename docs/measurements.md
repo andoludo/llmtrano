@@ -253,3 +253,12 @@ close to the tutorial's 5,996 (the rest is interaction). In order:
 5. Occupancy and heater capacity: negligible.
 
 The same Brief run through the ui (stub LLM, real stack) gave 3,417 kWh, identical to the direct run.
+
+## Phase 2 (2026-10-28)
+
+Nothing could be measured: the sandbox had no OpenModelica, no Docker and no GPU. The numbers phase 2 adds
+(the heating need of the reference house before and after renovation, the gas and electricity use, the
+difference with trano's six-zone reference results) come from the eval run on the laptop
+(`uv run python -m llmtrano.evals.run`, gate case `reference_house`); record them here when it has run.
+Design heat losses the compiler writes for the reference house, for the record: 12,063 W before and
+2,217 W after (trano's six-zone cases: 10,750 W and 2,340 W).

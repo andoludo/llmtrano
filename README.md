@@ -4,12 +4,18 @@ A local-first LLM assistant that turns a plain-language house description into a
 [trano](https://github.com/andoludo/trano) building model, simulates it with OpenModelica and explains
 the result. Phase 1 is the golden path: describe one house in the chat, answer a few questions, confirm the
 House Brief card, and get a one-year heating simulation with an explanation whose every number comes from
-the simulation. Every service runs locally, both models answer through one OpenAI-compatible endpoint, and
-trano simulates inside the `worker` container without the Docker socket. The workflow graph is in
-[docs/workflow.md](docs/workflow.md); what each step does is in [docs/phase-1-notes.md](docs/phase-1-notes.md).
+the simulation. Phase 2 adds ventilation, day and night zones, gas boilers and heat pumps on radiators, the
+renovation you describe as a second scenario with its savings, a heat-loss split, the energy cost and the
+CO2. Every service runs locally, both models answer through one OpenAI-compatible endpoint, and trano
+simulates inside the `worker` container without the Docker socket. The workflow graph is in
+[docs/workflow.md](docs/workflow.md); what each step does is in [docs/phase-1-notes.md](docs/phase-1-notes.md)
+and [docs/phase-2-notes.md](docs/phase-2-notes.md). Phase 3 adds a 45-case eval set with a gate and an A/B
+comparison, an LLM judge, grounded references, metrics and dashboards, and the hardening of a shared instance
+([docs/phase-3-notes.md](docs/phase-3-notes.md)); how to run it all is in [docs/runbook.md](docs/runbook.md).
 
 Project rules for contributors (human or Claude Code) are in [CLAUDE.md](CLAUDE.md); the phase plans are
-in [docs/](docs/).
+in [docs/](docs/); the decisions that still need the owner are in
+[docs/phase-3-review.md](docs/phase-3-review.md).
 
 ## Services
 
@@ -18,8 +24,10 @@ in [docs/](docs/).
 | `db` | Postgres 17 (pgvector image): runs, sessions, messages, facts, Briefs, KPIs, LangGraph checkpoints | 5432 | core |
 | `queue` | Valkey 8: arq job queue | 6379 | core |
 | `worker` | OpenModelica 1.26.9 + trano + llmtrano; runs model checks and simulations one at a time | none | core |
-| `api` | FastAPI: `/sessions` (chat and confirmation, SSE), `/runs`, `/feedback`, `/health`, `/models` | 8000 | core |
-| `ui` | Gradio: chat with answer buttons, House Brief card, Confirm, run progress, KPI table | 7860 | core |
+| `api` | FastAPI: `/sessions` (chat, confirmation, export, erasure; SSE), `/runs`, `/feedback`, `/health`, `/models`, `/metrics` | 8000 | core |
+| `ui` | Gradio: chat with answer buttons, House Brief card with its renovation column, Confirm, run progress, results per scenario, heat-loss split | 7860 | core |
+| `prometheus` | Scrapes the api's metrics | 9090 | `observability` |
+| `grafana` | Dashboard: LLM latency, guardrail, runs, the last simulations | 3000 | `observability` |
 | `model-fetch` | One-shot: downloads the pinned GGUF models into the `models` volume | none | `gpu` |
 | `llm` | llama-swap + llama-server (CUDA 13): `qwen3.5-9b` and `qwen3.6-35b-a3b` | 8080 | `gpu` |
 
@@ -111,6 +119,14 @@ uv run ruff format && uv run ruff check && uv run mypy src && uv run pytest
 
 ```bash
 uv run pytest -m compose
+```
+
+The eval set, its gate and the comparison of two runs (details in [docs/runbook.md](docs/runbook.md)):
+
+```bash
+uv run python -m llmtrano.evals.run --gate --judge
+uv run python -m llmtrano.evals.compare evals/results/a.json evals/results/b.json --gate evals/gate.yaml
+uv run python -m llmtrano.evals.generate          # rewrite the generated cases after changing an archetype
 ```
 
 Database migrations run when the api starts. To create a new one after changing `llmtrano.db.models`

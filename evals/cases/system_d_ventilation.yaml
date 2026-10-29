@@ -1,0 +1,18 @@
+id: system_d_ventilation
+note: a new terraced house with system D ventilation; the heating system is not stated (ideal heater)
+opening: >-
+  A new terraced house, finished in 2022, 130 m2 on three floors, with system D ventilation and triple
+  glazing. Walls, roof and floor are all well insulated and the house is airtight.
+answers:
+  heating_system: "I don't know."
+expected:
+  building_type: terraced
+  construction_period: after_2020
+  heated_floor_area_m2: 130
+  storeys: 3
+  ventilation: balanced_heat_recovery
+  glazing: triple
+  wall_insulation: good
+  roof_insulation: good
+  floor_insulation: good
+  airtightness: tight

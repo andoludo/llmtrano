@@ -8,8 +8,8 @@ the assumptions. The answer buttons come from the planner's options, never from 
 import json
 import re
 from collections import Counter
-from collections.abc import Sequence
-from typing import Literal
+from collections.abc import Mapping, Sequence
+from typing import Any, Literal
 
 from llmtrano.brief.model import BRIEF_FIELDS, Fact, HouseBrief, Provenance, Source
 from llmtrano.brief.plan import Question, label
@@ -73,14 +73,18 @@ FIELD_NAMES: dict[str, str] = {
     "construction_period": "construction period",
     "heated_floor_area_m2": "heated floor area (m2)",
     "storeys": "storeys",
+    "zoning": "zoning",
     "room_height_m": "room height (m)",
     "street_facade_orientation": "street facade orientation",
+    "main_window_orientation": "main window orientation",
     "wall_insulation": "wall insulation",
     "roof_insulation": "roof insulation",
     "floor_insulation": "floor insulation",
     "glazing": "glazing",
     "window_to_wall_ratio": "window-to-wall ratio",
     "airtightness": "airtightness",
+    "ventilation": "ventilation",
+    "heating_system": "heating system",
     "heating_setpoint_day_c": "day temperature (degC)",
     "heating_setpoint_night_c": "night temperature (degC)",
     "day_start_h": "day starts at (hour)",
@@ -110,27 +114,93 @@ def brief_lines(brief: HouseBrief, provenance: Provenance) -> list[str]:
     return lines
 
 
+def results_summary(kpis: Mapping[str, Any]) -> dict[str, Any]:
+    """The part of a KPI JSON the explanation may quote, rounded to one decimal."""
+    summary: dict[str, Any] = {
+        key: kpis.get(key) for key in ("heating_energy_kwh", "heating_energy_kwh_per_m2", "peak_heating_w")
+    }
+    summary |= {"heated_floor_area_m2": kpis.get("heated_floor_area_m2"), "period": "one year"}
+    system = kpis.get("system") or {}
+    energy = kpis.get("energy") or {}
+    if system.get("fuel"):
+        summary["heating_system"] = {
+            "kind": system.get("kind"),
+            "uses": system.get("fuel"),
+            "final_energy_kwh": energy.get("final_energy_kwh"),
+            "auxiliary_electricity_kwh": energy.get("auxiliary_electricity_kwh"),
+            "heat_per_unit_of_fuel": system.get("seasonal_efficiency"),
+            "cost_eur_per_year": energy.get("cost_eur"),
+            "co2_kg_per_year": energy.get("co2_kg"),
+            "prices_eur_per_kwh": energy.get("prices"),
+            "co2_factors_kg_per_kwh": energy.get("emission_factors"),
+        }
+    elif energy.get("note"):
+        summary["heating_system"] = {"kind": "none stated", "note": energy["note"]}
+    split = kpis.get("heat_loss_split") or {}
+    if split:
+        summary["heat_loss_split"] = {
+            "share_percent": split.get("share_percent"),
+            "estimated_kwh": split.get("estimated_kwh"),
+            "method": "estimate from the U-values, areas and air flows",
+        }
+    sizing = kpis.get("sizing") or {}
+    if sizing:
+        summary["design"] = {
+            "design_heat_loss_w": sizing.get("design_heat_loss_w"),
+            "heater_capacity_w": sizing.get("heater_capacity_w"),
+            "generator_kw": (sizing.get("generator") or {}).get("nominal_power_w"),
+        }
+        if summary["design"]["generator_kw"] is not None:
+            summary["design"]["generator_kw"] = summary["design"]["generator_kw"] / 1000
+    rounded: dict[str, Any] = _rounded(summary)
+    return rounded
+
+
+def _rounded(value: Any) -> Any:
+    if isinstance(value, float):
+        return round(value, 1)
+    if isinstance(value, dict):
+        return {key: _rounded(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_rounded(item) for item in value]
+    return value
+
+
 def interpret_input(
     *,
-    kpis: dict[str, object],
+    kpis: Mapping[str, Any],
     brief: HouseBrief,
     provenance: Provenance,
     assumptions: Sequence[str],
     language: Language,
+    renovation_kpis: Mapping[str, Any] | None = None,
+    renovation_changes: Sequence[tuple[str, str | None, str]] = (),
+    comparison: Mapping[str, Any] | None = None,
+    references: Sequence[str] = (),  # published results to compare with, one line each (phase 3)
 ) -> str:
-    results = {
-        key: kpis[key] for key in ("heating_energy_kwh", "heating_energy_kwh_per_m2", "peak_heating_w")
-    }
-    results |= {"heated_floor_area_m2": kpis.get("heated_floor_area_m2"), "period": "one year"}
-    rounded = {key: round(value, 1) if isinstance(value, float) else value for key, value in results.items()}
-    return "\n".join(
-        [
-            f"Language: {language}",
-            "Results (from the simulation, rounded):",
-            json.dumps(rounded, ensure_ascii=False),
-            "House:",
-            *brief_lines(brief, provenance),
-            "Assumptions:",
-            *(f"- {line}" for line in assumptions),
+    lines = [
+        f"Language: {language}",
+        "Results (from the simulation, rounded):",
+        json.dumps(results_summary(kpis), ensure_ascii=False),
+    ]
+    if renovation_kpis is not None:
+        lines += [
+            "Renovation changes:",
+            *(
+                f"- {_name(name)}: {before or 'not given'} -> {after}"
+                for name, before, after in renovation_changes
+            ),
+            "Renovation results (the house after the renovation, rounded):",
+            json.dumps(results_summary(renovation_kpis), ensure_ascii=False),
         ]
-    )
+    if comparison:
+        lines += [
+            "Comparison (saving = before minus after):",
+            json.dumps(_rounded(comparison), ensure_ascii=False),
+        ]
+    lines += ["House:", *brief_lines(brief, provenance)]
+    if references:
+        lines += ["References (published results for houses like this one, with their source):"]
+        lines += [f"- {line}" for line in references]
+    lines += ["Assumptions:", *(f"- {line}" for line in assumptions)]
+    return "\n".join(lines)

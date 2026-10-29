@@ -20,13 +20,19 @@ WORKDIR /app
 COPY pyproject.toml uv.lock .python-version ./
 RUN uv sync --frozen --no-dev --no-install-project
 
-# Libraries at build time (trano T4, now in trano-simulate): containers start in seconds and need no network.
-# Installed under /root/.openmodelica, which is why the worker runs as root in phase 0.
-RUN python -m trano_simulate.install_libraries
-
 COPY alembic.ini README.md ./
 COPY src ./src
 RUN uv sync --frozen --no-dev
+
+# Unprivileged (phase 3): the Modelica libraries are installed in the worker user's home (OpenModelica's
+# package manager installs per user), and /runs is created writable for it before the volume is mounted.
+RUN useradd --system --uid 10001 --create-home --home-dir /home/worker worker \
+    && mkdir -p /runs && chown -R worker:worker /runs /app
+USER worker
+ENV HOME=/home/worker
+
+# Libraries at build time (trano T4, now in trano-simulate): containers start in seconds and need no network.
+RUN python -m trano_simulate.install_libraries
 
 ENV TRANO_SIMULATION_RUNTIME=local
 CMD ["arq", "llmtrano.jobs.worker.WorkerSettings"]

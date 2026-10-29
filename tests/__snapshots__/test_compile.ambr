@@ -110,6 +110,7 @@
       floor_area: 140.0
       average_room_height: 2.6
       n50: 6.0
+      ventilation_schedule: '[0, 0.02427; 86400, 0.02427]'
     occupancy:
       parameters:
         occupancy: 3600*{7, 23}
@@ -119,7 +120,7 @@
         id: HEATING:001
         parameters:
           heating_setpoint_schedule: '[0, 289.15; 25200, 289.15; 25200, 294.15; 82800, 294.15; 82800, 289.15; 86400, 289.15]'
-          maximum_heating_power: 22500.0
+          maximum_heating_power: 23500.0
           maximum_cooling_power: 0.0
     external_boundaries:
       external_walls:
@@ -306,6 +307,7 @@
       floor_area: 120.0
       average_room_height: 2.6
       n50: 6.0
+      ventilation_schedule: '[0, 0.0208; 86400, 0.0208]'
     occupancy:
       parameters:
         occupancy: 3600*{7, 23}
@@ -315,7 +317,7 @@
         id: HEATING:001
         parameters:
           heating_setpoint_schedule: '[0, 290.15; 25200, 290.15; 25200, 293.15; 82800, 293.15; 82800, 290.15; 86400, 290.15]'
-          maximum_heating_power: 8000.0
+          maximum_heating_power: 9000.0
           maximum_cooling_power: 0.0
     external_boundaries:
       external_walls:
@@ -528,6 +530,7 @@
       floor_area: 110.0
       average_room_height: 2.7
       n50: 3.0
+      ventilation_schedule: '[0, 0.03465; 86400, 0.03465]'
     occupancy:
       parameters:
         occupancy: 3600*{7, 23}
@@ -537,7 +540,7 @@
         id: HEATING:001
         parameters:
           heating_setpoint_schedule: '[0, 289.15; 25200, 289.15; 25200, 294.15; 82800, 294.15; 82800, 289.15; 86400, 289.15]'
-          maximum_heating_power: 3000.0
+          maximum_heating_power: 4500.0
           maximum_cooling_power: 0.0
     external_boundaries:
       external_walls:

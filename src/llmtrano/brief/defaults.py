@@ -12,17 +12,25 @@ from llmtrano.brief.model import (
     Airtightness,
     FieldProvenance,
     Glazing,
+    HeatingSystem,
     HouseBrief,
     InsulationLevel,
     Orientation,
     Period,
     Provenance,
     Source,
+    Ventilation,
+    Zoning,
 )
 
 TRANO_REFERENCE = "trano reference house"
 RULE_OF_THUMB = "rule of thumb (assumption)"
-BY_PERIOD = "assumed from the construction period until TABULA data (phase 2)"
+BY_PERIOD = "assumed from the construction period (rule of thumb until TABULA data)"
+VENTILATION_BY_PERIOD_BASIS = (
+    "assumed from the construction period (the Flemish EPB requires a ventilation system since 2006)"
+)
+HEATING_UNKNOWN_BASIS = "not stated: an ideal heater gives the heating need, not the fuel or electricity use"
+ZONING_BASIS = "one zone unless stated; day and night zones can be chosen on the card"
 
 INSULATION_BY_PERIOD: dict[Period, InsulationLevel] = {
     Period.before_1946: InsulationLevel.none,
@@ -31,6 +39,14 @@ INSULATION_BY_PERIOD: dict[Period, InsulationLevel] = {
     Period.y1991_2005: InsulationLevel.medium,
     Period.y2006_2020: InsulationLevel.good,
     Period.after_2020: InsulationLevel.good,
+}
+VENTILATION_BY_PERIOD: dict[Period, Ventilation] = {
+    Period.before_1946: Ventilation.natural,
+    Period.y1946_1970: Ventilation.natural,
+    Period.y1971_1990: Ventilation.natural,
+    Period.y1991_2005: Ventilation.natural,
+    Period.y2006_2020: Ventilation.mechanical_extract,
+    Period.after_2020: Ventilation.mechanical_extract,
 }
 GLAZING_BY_PERIOD: dict[Period, Glazing] = {
     Period.before_1946: Glazing.double_old,
@@ -53,7 +69,7 @@ def _constant(value: object) -> Callable[[HouseBrief], object]:
 
 
 def _from_period(
-    table: dict[Period, InsulationLevel] | dict[Period, Glazing],
+    table: dict[Period, InsulationLevel] | dict[Period, Glazing] | dict[Period, Ventilation],
 ) -> Callable[[HouseBrief], object]:
     def value(brief: HouseBrief) -> object | None:
         return table[brief.construction_period] if brief.construction_period else None
@@ -87,8 +103,20 @@ DEFAULTS: dict[str, Default] = {
         _constant(Orientation.north), f"{TRANO_REFERENCE} (street facade north)"
     ),
     "occupants": Default(_constant(2), RULE_OF_THUMB),
+    # phase 2
+    "ventilation": Default(_from_period(VENTILATION_BY_PERIOD), VENTILATION_BY_PERIOD_BASIS),
+    "heating_system": Default(_constant(HeatingSystem.unknown), HEATING_UNKNOWN_BASIS),
+    "zoning": Default(_constant(Zoning.one), ZONING_BASIS),
 }
-UNKNOWN = {InsulationLevel.unknown, Glazing.unknown, Airtightness.unknown}
+UNKNOWN = {
+    InsulationLevel.unknown,
+    Glazing.unknown,
+    Airtightness.unknown,
+    Ventilation.unknown,
+    HeatingSystem.unknown,
+}
+# Optional fields that stay empty without a default: the compiler has a rule for "not given".
+NO_DEFAULT: frozenset[str] = frozenset({"municipality", "main_window_orientation"})
 
 
 def is_given(value: object) -> bool:
@@ -109,8 +137,8 @@ def apply_defaults(brief: HouseBrief, provenance: Provenance | None = None) -> t
         if is_given(current):
             continue
         value = default.value(brief)
-        if value is None:
-            continue
+        if value is None or (name == "heating_system" and current is HeatingSystem.unknown):
+            continue  # "I don't know" about the heating system already is the ideal-heater value
         updates[name] = value
         said = provenance.get(name)
         provenance[name] = FieldProvenance(

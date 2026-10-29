@@ -223,6 +223,20 @@ PLAN_CASES: list[tuple[str, dict[str, Any], list[str]]] = [
             "airtightness": "leaky",
             "floor_insulation": InsulationLevel.none,
         },
+        ["heating_system", "ventilation"],
+    ),
+    (
+        "systems known",
+        {
+            **REQUIRED,
+            "wall_insulation": InsulationLevel.none,
+            "glazing": Glazing.double_old,
+            "roof_insulation": InsulationLevel.unknown,
+            "airtightness": "leaky",
+            "floor_insulation": InsulationLevel.none,
+            "heating_system": "gas_boiler_old",
+            "ventilation": "unknown",
+        },
         ["heating_setpoint_day_c", "heating_setpoint_night_c"],
     ),
 ]
@@ -301,6 +315,18 @@ def test_options() -> None:
     assert DONT_KNOW not in {o.label for o in options_for("construction_period")}  # required: no default
     assert [o.value for o in options_for("storeys")] == ["1", "2", "3"]
     assert options_for("heated_floor_area_m2") == []
+    assert [o.label for o in options_for("heating_system")] == [
+        "Old gas boiler",
+        "Condensing gas boiler",
+        "Air-water heat pump",
+        DONT_KNOW,
+    ]
+    assert [o.value for o in options_for("ventilation")] == [
+        "natural",
+        "mechanical_extract",
+        "balanced_heat_recovery",
+        "unknown",
+    ]
 
 
 READY_CASES: list[tuple[str, dict[str, Any], bool, bool]] = [
@@ -344,3 +370,9 @@ def test_not_ready_with_a_conflict_or_a_defaulted_required_field() -> None:
     assert not ready_to_confirm(brief, provenance, [conflict], user_says_complete=True)
     provenance["storeys"] = DEFAULT
     assert not ready_to_confirm(brief, provenance, [], user_says_complete=True)
+
+
+def test_a_brief_confirmed_before_is_ready_again_without_the_envelope() -> None:
+    brief, provenance = _stated(REQUIRED)
+    assert not ready_to_confirm(brief, provenance, [], user_says_complete=False)
+    assert ready_to_confirm(brief, provenance, [], user_says_complete=False, confirmed_before=True)

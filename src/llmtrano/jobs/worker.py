@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any, ClassVar
 
 import yaml
+from arq import cron
 from arq.connections import RedisSettings
 from redis import Redis
 from sqlalchemy.orm import Session, sessionmaker
@@ -30,8 +31,9 @@ from trano_simulate.simulate import SimulationOptions
 from llmtrano.db.models import KpiRow, Run, RunStatus
 from llmtrano.db.session import make_sessionmaker
 from llmtrano.jobs.progress import Publisher, channel, progress_message
+from llmtrano.jobs.retention import retention_sweep
 from llmtrano.kpi.compute import house_kpis
-from llmtrano.logs import configure_logging
+from llmtrano.logs import bind_context, configure_logging
 from llmtrano.settings import Settings
 from llmtrano.trano_info import trano_version
 
@@ -201,12 +203,14 @@ def execute_run(
 
 
 async def run_simulation(ctx: dict[str, Any], run_id: str) -> str:
+    bind_context(run_id=run_id)
     args = (uuid.UUID(run_id), ctx["sessions"], ctx["settings"], ctx["publisher"])
     status = await asyncio.to_thread(execute_run, *args)
     return status.value
 
 
 async def check_model(ctx: dict[str, Any], run_id: str) -> str:
+    bind_context(run_id=run_id)
     status = await asyncio.to_thread(execute_check, uuid.UUID(run_id), ctx["sessions"], ctx["settings"])
     return status.value
 
@@ -228,7 +232,9 @@ _settings = Settings()
 
 
 class WorkerSettings:
-    functions: ClassVar[list[Any]] = [run_simulation, check_model]
+    functions: ClassVar[list[Any]] = [run_simulation, check_model, retention_sweep]
+    # the retention sweep every night at 03:17 (RETENTION_DAYS), and on request after an erasure
+    cron_jobs: ClassVar[list[Any]] = [cron(retention_sweep, hour=3, minute=17, timeout=600)]
     on_startup = startup
     on_shutdown = shutdown
     redis_settings = RedisSettings.from_dsn(_settings.valkey_url)

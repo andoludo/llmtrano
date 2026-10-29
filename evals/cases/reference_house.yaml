@@ -1,0 +1,50 @@
+# Phase 2 gate: trano's residential reference house (examples/residential_before_renovation.yaml) in plain
+# words, with the deep renovation of residential_after_renovation.yaml as plans. The reference numbers are
+# trano's docs/validation/residential_reference_cases.md (Buildings, heat from the radiators): 130 kWh/m2
+# before and 17.6 kWh/m2 after. The chat house has two zones instead of six and generic radiators, so the
+# tolerance is wide; the direction and the order of magnitude of the reduction are what the gate checks.
+id: reference_house
+gate: true
+outcome: compare
+opening: >-
+  A semi-detached house from the sixties in Uccle, 110 m2 over two floors, street side to the north and the
+  garden to the south. Cavity walls without insulation, nothing on the attic floor, the ground floor is not
+  insulated either, old double glazing in wooden frames, and it is quite draughty. An old gas boiler with
+  radiators, no ventilation system, just the windows. Four of us live here; 21 degrees from 7 to 23 and 16
+  at night, the bedrooms upstairs are a separate night zone. Next year we plan a deep renovation: 12 cm of
+  insulation on the outside of the walls, 22 cm of mineral wool on the attic floor, 8 cm under a new floor,
+  triple glazing, make it airtight, a heat pump, and balanced ventilation with heat recovery.
+answers:
+  construction_period: "Built in 1965."
+expected:
+  building_type: semi_detached
+  construction_period: y1946_1970
+  heated_floor_area_m2: 110
+  storeys: 2
+  street_facade_orientation: north
+  wall_insulation: none
+  roof_insulation: none
+  floor_insulation: none
+  glazing: double_old
+  airtightness: leaky
+  heating_system: gas_boiler_old
+  ventilation: natural
+  occupants: 4
+  heating_setpoint_day_c: 21
+  heating_setpoint_night_c: 16
+  day_start_h: 7
+  day_end_h: 23
+  zoning: day_night
+renovation:
+  wall_insulation: good
+  roof_insulation: good
+  floor_insulation: good
+  glazing: triple
+  airtightness: tight
+  heating_system: heat_pump_air_water
+  ventilation: balanced_heat_recovery
+reference:
+  source: "trano docs/validation/residential_reference_cases.md, Buildings 13.0.0, heat from the radiators"
+  heating_kwh_per_m2: 130
+  renovation_heating_kwh_per_m2: 17.6
+  tolerance: 0.35

@@ -45,15 +45,20 @@ class FakeJobs:
     checked: list[CompiledModel] = field(default_factory=list)
     simulated: list[CompiledModel] = field(default_factory=list)
 
-    async def check_model(self, session_id: str, compiled: CompiledModel) -> CheckOutcome:
+    scenarios: list[str] = field(default_factory=list)
+
+    async def check_model(
+        self, session_id: str, compiled: CompiledModel, scenario: str = "baseline"
+    ) -> CheckOutcome:
         self.checked.append(compiled)
         errors = [] if self.check_ok else ["spaces[0].parameters.floor_area: must be >= 0 (Floor area [m2])"]
         return CheckOutcome(run_id=uuid.uuid4(), ok=self.check_ok, errors=errors)
 
     async def simulate(
-        self, session_id: str, compiled: CompiledModel, on_phase: PhaseCallback
+        self, session_id: str, compiled: CompiledModel, on_phase: PhaseCallback, scenario: str = "baseline"
     ) -> SimulationOutcome:
         self.simulated.append(compiled)
+        self.scenarios.append(scenario)
         for phase in ("generating", "compiling", "simulating", "done"):
             await on_phase(phase)
         if not self.simulate_ok:
@@ -167,7 +172,12 @@ async def test_successful_run_is_explained_with_grounded_numbers(harness: Harnes
     harness.llm.queue("interpret", "The house needs 6,469 kWh a year, 53.9 kWh per m2, with a 4335 W peak.")
     result = await harness.resume({"approved": True})
     assert result["phase"] == Phase.done
-    assert result["kpis"] == KPIS
+    assert {key: result["kpis"][key] for key in KPIS} == KPIS
+    assert set(result["kpis"]) == {*KPIS, "energy", "heat_loss_split", "sizing"}  # enriched by Python
+    assert result["kpis"]["energy"]["cost_eur"] is None  # an ideal heater has no fuel
+    # the intake mentioned triple glazing: the renovation scenario ran too (same fake KPIs, so no saving)
+    assert result["renovation_kpis"] is not None
+    assert result["comparison"]["heating_energy_kwh"]["saving"] == 0.0
     assert result["explanation"].startswith("The house needs 6,469 kWh")
     assert result["guardrail"].passed_first_time
     compiled = harness.jobs.simulated[0]
@@ -178,18 +188,18 @@ async def test_successful_run_is_explained_with_grounded_numbers(harness: Harnes
 
 async def test_guardrail_retries_then_falls_back(harness: Harness) -> None:
     await _intake_to_confirm(harness)
-    harness.llm.queue("interpret", "It needs 7,000 kWh.", "It needs 9,999 kWh.")
+    harness.llm.queue("interpret", "It needs 7,777 kWh.", "It needs 9,999 kWh.")
     result = await harness.resume({"approved": True})
     report = result["guardrail"]
-    assert (report.wrong_first, report.wrong_retry, report.fallback_used) == (["7,000"], ["9,999"], True)
+    assert (report.wrong_first, report.wrong_retry, report.fallback_used) == (["7,777"], ["9,999"], True)
     assert result["explanation"].startswith("The simulated house needs 6469 kWh")
     retry = harness.llm.calls("interpret")[1]["messages"][-1]["content"]
-    assert "not in the Results or the House: 7,000" in retry
+    assert "not in the Results or the House: 7,777" in retry
 
 
 async def test_guardrail_retry_that_passes(harness: Harness) -> None:
     await _intake_to_confirm(harness)
-    harness.llm.queue("interpret", "It needs 7,000 kWh.", "It needs 6469 kWh.")
+    harness.llm.queue("interpret", "It needs 7,777 kWh.", "It needs 6469 kWh.")
     result = await harness.resume({"approved": True})
     assert result["explanation"] == "It needs 6469 kWh."
     assert not result["guardrail"].passed_first_time and not result["guardrail"].fallback_used
@@ -243,3 +253,121 @@ def test_workflow_doc_is_up_to_date() -> None:
     from llmtrano.workflow.graph import WORKFLOW_DOC
 
     assert WORKFLOW_DOC.read_text() == workflow_doc(), "run `uv run python -m llmtrano.workflow.graph`"
+
+
+# ---------- phase 2: the renovation scenario
+
+
+RENOVATION_KPIS = {
+    **KPIS,
+    "heating_energy_kwh": 3100.0,
+    "heating_energy_kwh_per_m2": 25.83,
+    "peak_heating_w": 2500.0,
+}
+
+
+@dataclass
+class ScenarioJobs(FakeJobs):
+    """Fake jobs whose KPIs depend on the model: the renovated house (triple glazing) needs less."""
+
+    async def simulate(
+        self, session_id: str, compiled: CompiledModel, on_phase: PhaseCallback, scenario: str = "baseline"
+    ) -> SimulationOutcome:
+        outcome = await super().simulate(session_id, compiled, on_phase, scenario)
+        if outcome.ok and "WINDOW_TRIPLE" in compiled.yaml_text:
+            return SimulationOutcome(run_id=outcome.run_id, ok=True, kpis=RENOVATION_KPIS)
+        return outcome
+
+
+async def test_renovation_facts_give_a_second_scenario_and_a_comparison(harness: Harness) -> None:
+    harness.jobs = ScenarioJobs()
+    await _intake_to_confirm(harness)  # the user wants triple glazing next year
+    harness.llm.queue("interpret", "Now 6,469 kWh, after the renovation 3,100 kWh: 52% less.")
+    result = await harness.resume({"approved": True})
+    assert result["phase"] == Phase.done
+    assert [c.model_dict["glazings"][0]["id"] for c in harness.jobs.simulated] == [
+        "WINDOW_DOUBLE_OLD:001",
+        "WINDOW_TRIPLE:001",
+    ]
+    assert harness.jobs.scenarios == ["baseline", "renovation"]
+    assert result["kpis"]["heating_energy_kwh"] == 6469.2
+    assert result["renovation_kpis"]["heating_energy_kwh"] == 3100.0
+    comparison = result["comparison"]
+    assert comparison["heating_energy_kwh"] == {
+        "baseline": 6469.2,
+        "renovation": 3100.0,
+        "saving": 3369.2,
+        "saving_percent": 52,
+    }
+    assert result["guardrail"].passed_first_time  # 52 and 3,100 are known values: they come from Python
+    assert result["scenario"] == "baseline"
+    assert result["renovation_compiled"].yaml_text != result["compiled"].yaml_text
+
+
+async def test_renovation_card_shows_the_change_before_the_run(harness: Harness) -> None:
+    result = await _intake_to_confirm(harness)
+    rows = {row["field"]: row for row in result["__interrupt__"][0].value["card"]["rows"]}
+    assert rows["glazing"]["renovation"] == "Triple glazing"
+    assert rows["glazing"]["renovation_evidence"] == "triple"
+    assert result["__interrupt__"][0].value["card"]["renovation_fields"] == ["glazing"]
+
+
+async def test_renovation_added_after_a_result_reruns_only_the_renovation(harness: Harness) -> None:
+    harness.jobs = ScenarioJobs()
+    harness.llm.queue(
+        "extract",
+        facts(
+            ("building_type", "detached", "baseline"),
+            ("construction_period", "1978", "baseline"),
+            ("heated_floor_area_m2", "120 m2", "baseline"),
+            ("storeys", "2", "baseline"),
+            complete=True,
+        ),
+    )
+    harness.llm.queue("respond", "Please confirm.", "Triple glazing noted, confirm to compare.")
+    harness.llm.queue("interpret", "It needs 6469 kWh.", "After the renovation 3100 kWh, 3369 kWh less.")
+    await harness.say("Detached, 1978, 120 m2, two floors, that's all.")
+    first = await harness.resume({"approved": True})
+    assert first["phase"] == Phase.done and len(harness.jobs.simulated) == 1
+    harness.llm.queue("extract", facts(("glazing", "triple", "renovation")))
+    second = await harness.say("What if I put in triple glazing?")
+    assert second["phase"] == Phase.confirm  # confirmed before: ready again at once
+    third = await harness.resume({"approved": True})
+    assert len(harness.jobs.simulated) == 2  # the baseline was not simulated again
+    assert third["comparison"]["heating_energy_kwh"]["saving"] == 3369.2
+    assert third["kpis"]["heating_energy_kwh"] == 6469.2
+
+
+async def test_baseline_change_after_a_result_reruns_both(harness: Harness) -> None:
+    harness.jobs = ScenarioJobs()
+    await _intake_to_confirm(harness)
+    harness.llm.queue("interpret", "Baseline 6469 kWh, renovation 3100 kWh.", "Updated: 6469 and 3100 kWh.")
+    await harness.resume({"approved": True})
+    assert len(harness.jobs.simulated) == 2
+    harness.llm.queue("extract", facts(("wall_insulation", "none", "baseline")))
+    harness.llm.queue("respond", "Walls noted, please confirm again.")
+    await harness.say("By the way the walls are not insulated.")
+    result = await harness.resume({"approved": True})
+    assert len(harness.jobs.simulated) == 4 and result["comparison"] is not None
+
+
+async def test_interpretation_gets_references_and_may_quote_them(harness: Harness) -> None:
+    harness.llm.queue(
+        "extract",
+        facts(
+            ("building_type", "semi_detached", "baseline"),
+            ("construction_period", "1965", "baseline"),
+            ("heated_floor_area_m2", "110 m2", "baseline"),
+            ("storeys", "2", "baseline"),
+            complete=True,
+        ),
+    )
+    harness.llm.queue("respond", "Please confirm.")
+    harness.llm.queue(
+        "interpret", "It needs 6469 kWh, 53.9 kWh/m2, less than trano's reference house at 130 kWh/m2."
+    )
+    await harness.say("Semi-detached from 1965, 110 m2, two floors, that's all.")
+    result = await harness.resume({"approved": True})
+    request = harness.llm.calls("interpret")[0]["messages"][-1]["content"]
+    assert "References (published results" in request and "130 kWh/m2" in request
+    assert result["guardrail"].passed_first_time  # 130 is a known value: it comes from the references

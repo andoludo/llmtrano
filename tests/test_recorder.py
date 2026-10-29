@@ -74,10 +74,11 @@ async def test_brief_versions(sessions: sessionmaker[Session], session_id: str) 
     brief = HouseBrief(heated_floor_area_m2=120, municipality="Gent")
     provenance = {"heated_floor_area_m2": FieldProvenance(source=Source.user, evidence="120 m2", turn=1)}
     await recorder.brief(session_id, brief, provenance, "abc", confirmed=True)
-    await recorder.brief(session_id, brief, provenance, "abc", confirmed=False)
+    await recorder.brief(session_id, brief, provenance, "abc", confirmed=False, scenario="renovation")
     with sessions() as session:
         rows = session.scalars(select(HouseBriefRow).order_by(HouseBriefRow.version)).all()
         assert [r.version for r in rows] == [1, 2]
+        assert [r.scenario for r in rows] == ["baseline", "renovation"]
         assert rows[0].values["municipality"] == "Gent"
         assert rows[0].provenance["heated_floor_area_m2"]["evidence"] == "120 m2"
         assert rows[0].confirmed_at is not None and rows[1].confirmed_at is None
@@ -102,3 +103,25 @@ def test_run_kpis_and_feedback(sessions: sessionmaker[Session], session_id: str)
         assert session.get_one(Run, run.id).kind is RunKind.CHECK
         assert session.get_one(KpiRow, run.id).values == {"heating_energy_kwh": 1.0}
         assert session.scalars(select(Feedback)).one().thumbs == 1
+
+
+def test_worker_jobs_insert_the_scenario(sessions: sessionmaker[Session], session_id: str) -> None:
+    from llmtrano.compiler.compile import CompiledModel
+    from llmtrano.jobs.queue import WorkerJobs
+    from llmtrano.settings import Settings
+
+    jobs = WorkerJobs(redis=None, sessions=sessions, settings=Settings())  # type: ignore[arg-type]
+    compiled = CompiledModel(yaml_text="a: 1", model_dict={"a": 1}, assumptions=[], schema_hash="x")
+    run_id = jobs._insert(session_id, compiled, RunKind.SIMULATE, "renovation")
+    with sessions() as session:
+        run = session.get_one(Run, run_id)
+        assert (run.kind, run.scenario, run.yaml) == (RunKind.SIMULATE, "renovation", "a: 1")
+
+
+def test_migrations_have_one_head_with_the_phase_2_revision() -> None:
+    from alembic.script import ScriptDirectory
+
+    from llmtrano.db.migrate import alembic_config
+
+    script = ScriptDirectory.from_config(alembic_config("postgresql+psycopg://unused"))
+    assert script.get_heads() == ["a3f2c9d1e7b4"]

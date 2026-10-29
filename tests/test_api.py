@@ -17,7 +17,7 @@ from sqlalchemy.pool import StaticPool
 from test_workflow import FakeJobs, facts
 
 from llmtrano.api.app import Services, create_app
-from llmtrano.db.models import Base, Feedback, Message, Run, RunStatus
+from llmtrano.db.models import Base, Feedback, HouseBriefRow, Message, Run, RunStatus
 from llmtrano.db.recorder import DbRecorder
 from llmtrano.settings import Settings
 from llmtrano.workflow.deps import Deps
@@ -303,3 +303,129 @@ def test_feedback(harness: Harness) -> None:
     missing = {"message_id": str(uuid.uuid4()), "thumbs": 1}
     assert harness.client.post("/feedback", json=missing).status_code == 404
     assert harness.client.post("/feedback", json={"message_id": message_id, "thumbs": 0}).status_code == 422
+
+
+# ---------- phase 2: the renovation scenario through the api
+
+
+def test_confirm_with_renovation_plans_runs_both_scenarios(harness: Harness) -> None:
+    session_id = harness.session()
+    harness.llm.queue(
+        "extract",
+        facts(
+            ("building_type", "detached", "baseline"),
+            ("construction_period", "1985", "baseline"),
+            ("heated_floor_area_m2", "140 m2", "baseline"),
+            ("storeys", "2", "baseline"),
+            ("roof_insulation", "22 cm", "renovation"),
+            complete=True,
+        ),
+    )
+    harness.llm.queue("respond", "Noted, the roof insulation is planned. Please confirm.")
+    events = harness.stream(
+        f"/sessions/{session_id}/messages",
+        {"message": "Detached, 1985, 140 m2, 2 floors; we plan 22 cm on the roof."},
+    )
+    card = _data(events, "brief")
+    assert card["renovation_fields"] == ["roof_insulation"]
+    assert {r["field"]: r.get("renovation") for r in card["rows"]}[
+        "roof_insulation"
+    ] == "Good (renovated or recent)"
+    harness.llm.queue("interpret", "Now 6469 kWh; after the roof 6469 kWh too in this fake.")
+    events = harness.stream(f"/sessions/{session_id}/confirm", {"approved": True})
+    scenarios = [data["scenario"] for name, data in events if name == "kpis"]
+    assert scenarios == ["baseline", "renovation"]
+    assert [d["scenario"] for n, d in events if n == "run_phase" and d["phase"] == "simulating"] == [
+        "baseline",
+        "renovation",
+    ]
+    assert _data(events, "comparison")["comparison"]["heating_energy_kwh"]["saving"] == 0.0
+    assert _data(events, "phase") == {"phase": "done"}
+    state = harness.client.get(f"/sessions/{session_id}").json()
+    assert state["renovation_kpis"]["heating_energy_kwh"] == 6469.2
+    assert state["comparison"]["heating_energy_kwh"]["saving_percent"] == 0
+    assert state["renovation_run_id"] is not None and state["run_id"] != state["renovation_run_id"]
+    with harness.sessions() as session:
+        runs = session.scalars(select(Run).order_by(Run.created_at)).all()
+        assert [r.scenario for r in runs] == []  # fake jobs: no rows; the recorder wrote the Briefs
+        briefs = session.scalars(select(HouseBriefRow).order_by(HouseBriefRow.version)).all()
+        assert [b.scenario for b in briefs] == ["baseline", "renovation"]
+
+
+def test_metrics_endpoint_counts_turns_and_llm_calls(harness: Harness) -> None:
+    session_id = harness.session()
+    harness.llm.queue("extract", facts(("building_type", "terraced", "baseline")))
+    harness.llm.queue("respond", "Thanks.")
+    harness.stream(f"/sessions/{session_id}/messages", {"message": "A terraced house."})
+    response = harness.client.get("/metrics")
+    assert response.status_code == 200 and response.headers["content-type"].startswith("text/plain")
+    body = response.text
+    assert "llmtrano_turns_total" in body
+    assert 'llmtrano_llm_call_seconds_count{call="extract",model="qwen3.5-9b"}' in body
+    assert "/metrics" not in harness.client.get("/openapi.json").json()["paths"]
+
+
+# ---------- phase 3: hardening
+
+
+def _services(harness: Harness, **overrides: Any) -> Services:
+    return Services(
+        sessions=harness.sessions,
+        queue=harness.queue,
+        llm=cast(AsyncOpenAI, harness.llm),
+        graph=harness.client.app.state.services.graph,
+        valkey_url="redis://unused",
+        settings=Settings(**overrides),
+    )
+
+
+def test_bearer_token_guards_everything_but_health_metrics_and_docs(harness: Harness) -> None:
+    with TestClient(create_app(_services(harness, api_token="s3cret"))) as client:
+        assert client.post("/sessions").status_code == 401
+        assert client.post("/sessions", headers={"Authorization": "Bearer wrong"}).status_code == 401
+        assert client.post("/sessions", headers={"Authorization": "Bearer s3cret"}).status_code == 201
+        assert client.get("/health").status_code == 200
+        assert client.get("/metrics").status_code == 200
+        assert client.get("/openapi.json").status_code == 200
+
+
+def test_security_headers(harness: Harness) -> None:
+    response = harness.client.get("/health")
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["cache-control"] == "no-store"
+
+
+def test_rate_limit_per_session(harness: Harness) -> None:
+    with TestClient(create_app(_services(harness, rate_limit_per_minute=2))) as client:
+        session_id = client.post("/sessions").json()["id"]
+        other = client.post("/sessions").json()["id"]
+        for _ in range(2):
+            harness.llm.queue("extract", facts())
+            harness.llm.queue("respond", "Tell me more.")
+            assert client.post(f"/sessions/{session_id}/messages", json={"message": "hi"}).status_code == 200
+        response = client.post(f"/sessions/{session_id}/messages", json={"message": "hi"})
+        assert response.status_code == 429 and "wait a minute" in response.json()["detail"]
+        harness.llm.queue("extract", facts())
+        harness.llm.queue("respond", "Tell me more.")
+        assert client.post(f"/sessions/{other}/messages", json={"message": "hi"}).status_code == 200
+
+
+def test_export_and_delete_a_session(harness: Harness) -> None:
+    session_id = harness.session()
+    _to_confirmation(harness, session_id)
+    harness.llm.queue("interpret", "The house needs 6469 kWh a year.")
+    harness.stream(f"/sessions/{session_id}/confirm", {"approved": True})
+    export = harness.client.get(f"/sessions/{session_id}/export").json()
+    assert export["session"]["id"] == session_id
+    assert [m["role"] for m in export["messages"]][:2] == ["user", "extract"]
+    assert export["house_briefs"][0]["scenario"] == "baseline" and export["facts"]
+    assert export["workflow_state"]["phase"] == "done"
+    assert harness.client.get(f"/sessions/{uuid.uuid4()}/export").status_code == 404
+
+    response = harness.client.delete(f"/sessions/{session_id}")
+    assert response.status_code == 204
+    assert harness.client.get(f"/sessions/{session_id}").status_code == 404
+    with harness.sessions() as session:
+        assert session.scalars(select(Message).where(Message.session_id == uuid.UUID(session_id))).all() == []
+        assert session.scalars(select(HouseBriefRow)).all() == []
+    assert harness.client.delete(f"/sessions/{session_id}").status_code == 404

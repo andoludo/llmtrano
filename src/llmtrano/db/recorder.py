@@ -12,7 +12,7 @@ from enum import StrEnum
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
 
-from llmtrano.brief.model import Fact, HouseBrief, Provenance
+from llmtrano.brief.model import Fact, HouseBrief, Provenance, Scenario
 from llmtrano.db.models import FactRow, HouseBriefRow, Message
 from llmtrano.llm.calls import CallStats
 from llmtrano.trano_info import trano_version
@@ -73,6 +73,7 @@ class DbRecorder:
         provenance: Provenance,
         schema_hash: str | None,
         confirmed: bool,
+        scenario: Scenario = "baseline",
     ) -> None:
         def insert() -> None:
             with self.sessions() as session:
@@ -84,6 +85,7 @@ class DbRecorder:
                     HouseBriefRow(
                         session_id=sid,
                         version=(last or 0) + 1,
+                        scenario=scenario,
                         values=brief.model_dump(mode="json"),
                         provenance={name: item.model_dump(mode="json") for name, item in provenance.items()},
                         schema_hash=schema_hash,

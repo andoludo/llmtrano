@@ -2,8 +2,10 @@
 
 Two columns. Left: the chat (streamed), the answer buttons of the planner's questions and the model used for
 the interactive turns. Right: the House Brief card ("you said" or "assumed", the user's words on hover,
-conflicts highlighted), the Confirm button (active only when the Brief is ready), the run progress and the KPI
-table drawn by code. Thumbs up or down under each answer go to ``POST /feedback``.
+conflicts highlighted, a renovation column when plans were described), the Confirm button (active only when
+the Brief is ready), the run progress and the results table drawn by code: one column per scenario, the
+saving, the cost and CO2 at the prices assumed, and the heat-loss split. Thumbs up or down under each answer
+go to ``POST /feedback``.
 
 The ui talks only to the api. Gradio cannot add components while it streams, so the answer buttons are a fixed
 pool whose labels and visibility follow the current questions.
@@ -35,14 +37,18 @@ FIELD_LABELS = {
     "construction_period": "Construction period",
     "heated_floor_area_m2": "Heated floor area (m2)",
     "storeys": "Storeys",
+    "zoning": "Zoning",
     "room_height_m": "Room height (m)",
     "street_facade_orientation": "Street facade faces",
+    "main_window_orientation": "Most glass faces",
     "wall_insulation": "Wall insulation",
     "roof_insulation": "Roof insulation",
     "floor_insulation": "Floor insulation",
     "glazing": "Glazing",
     "window_to_wall_ratio": "Window-to-wall ratio",
     "airtightness": "Airtightness",
+    "ventilation": "Ventilation",
+    "heating_system": "Heating system",
     "heating_setpoint_day_c": "Day temperature (degC)",
     "heating_setpoint_night_c": "Night temperature (degC)",
     "day_start_h": "Day starts (h)",
@@ -85,9 +91,12 @@ def parse_sse(lines: Iterable[str]) -> Iterator[SseEvent]:
 class ApiClient:
     """The ui's only way out: HTTP calls to the api."""
 
-    def __init__(self, base_url: str, transport: httpx.BaseTransport | None = None) -> None:
+    def __init__(
+        self, base_url: str, transport: httpx.BaseTransport | None = None, token: str | None = None
+    ) -> None:
+        headers = {"Authorization": f"Bearer {token}"} if token else {}
         self.http = httpx.Client(
-            base_url=base_url, timeout=httpx.Timeout(30.0, read=1800.0), transport=transport
+            base_url=base_url, timeout=httpx.Timeout(30.0, read=1800.0), transport=transport, headers=headers
         )
 
     def models(self) -> list[str]:
@@ -135,12 +144,14 @@ class ApiClient:
 
 
 def card_html(card: dict[str, Any] | None) -> str:
-    """The Brief card as an HTML table: value, a source badge, the user's words or the basis on hover."""
+    """The Brief card as an HTML table: value, a source badge, the user's words or the basis on hover, and
+    a renovation column when the user described plans (phase 2)."""
     if not card:
         return "<p><em>No description yet.</em></p>"
+    renovated = any(row.get("renovation") for row in card["rows"])
     rows = []
     for row in card["rows"]:
-        if row["value"] is None:
+        if row["value"] is None and not row.get("renovation"):
             continue
         if row["source"] == "user":
             badge, hover = "you said", row.get("evidence") or ""
@@ -149,10 +160,20 @@ def card_html(card: dict[str, Any] | None) -> str:
         style = ' style="background:#fde2e2"' if row.get("conflict") else ""
         name = html.escape(FIELD_LABELS.get(row["field"], row["field"]))
         badge_class = f"badge badge-{badge.replace(' ', '-')}"
+        value = html.escape(str(row["value"])) if row["value"] is not None else "<em>not given</em>"
+        after = ""
+        if renovated:
+            plan = row.get("renovation")
+            evidence = html.escape(row.get("renovation_evidence") or "", quote=True)
+            after = (
+                f'<td><span title="{evidence}" class="badge-renovation">{html.escape(plan)}</span></td>'
+                if (plan)
+                else "<td></td>"
+            )
         rows.append(
-            f"<tr{style}><td>{name}</td><td>{html.escape(str(row['value']))}</td>"
+            f"<tr{style}><td>{name}</td><td>{value}</td>"
             f'<td><span title="{html.escape(hover, quote=True)}" class="{badge_class}">{badge}</span>'
-            "</td></tr>"
+            f"</td>{after}</tr>"
         )
     missing = card.get("missing_required") or []
     needed = ", ".join(FIELD_LABELS.get(name, name) for name in missing)
@@ -162,23 +183,77 @@ def card_html(card: dict[str, Any] | None) -> str:
         f"{html.escape(str(c['current']))} or {html.escape(str(c['proposed']))}?</p>"
         for c in card.get("conflicts") or []
     )
-    table = "<table><thead><tr><th>Field</th><th>Value</th><th>Source</th></tr></thead><tbody>"
+    header = "<th>Field</th><th>Value</th><th>Source</th>" + (
+        "<th>After renovation</th>" if renovated else ""
+    )
+    table = f"<table><thead><tr>{header}</tr></thead><tbody>"
     return f"{table}{''.join(rows)}</tbody></table>{note}{conflicts}"
 
 
-def kpi_markdown(kpis: dict[str, Any] | None) -> str:
+def _fmt(value: Any, unit: str, digits: int = 0) -> str:
+    return "-" if value is None else f"{value:,.{digits}f} {unit}"
+
+
+def kpi_markdown(
+    kpis: dict[str, Any] | None,
+    renovation_kpis: dict[str, Any] | None = None,
+    comparison: dict[str, Any] | None = None,
+) -> str:
+    """The results table drawn by code: one column per scenario and the saving, then the heat-loss split."""
     if not kpis:
         return ""
-    return "\n".join(
-        [
-            "| Result (one year, Uccle weather) | Value |",
-            "| --- | --- |",
-            f"| Heating energy | {kpis['heating_energy_kwh']:,.0f} kWh |",
-            f"| Per m2 of heated floor area | {kpis['heating_energy_kwh_per_m2']:.1f} kWh/m2 |",
-            f"| Peak heating power (hourly mean) | {kpis['peak_heating_w']:,.0f} W |",
-            f"| Heated floor area | {kpis['heated_floor_area_m2']:.0f} m2 |",
+    energy = kpis.get("energy") or {}
+    renovation_energy = (renovation_kpis or {}).get("energy") or {}
+    fuel = energy.get("fuel") or renovation_energy.get("fuel")
+    lines_spec: list[tuple[str, str, str, int]] = [
+        ("Heating energy", "heating_energy_kwh", "kWh", 0),
+        ("Per m2 of heated floor area", "heating_energy_kwh_per_m2", "kWh/m2", 1),
+        ("Peak heating power (hourly mean)", "peak_heating_w", "W", 0),
+    ]
+    if fuel:
+        lines_spec += [
+            (f"Final energy ({fuel})", "energy.final_energy_kwh", "kWh", 0),
+            ("Energy cost (at the prices assumed)", "energy.cost_eur", "EUR/year", 0),
+            ("CO2 (at the factors assumed)", "energy.co2_kg", "kg/year", 0),
         ]
+
+    def pick(source: dict[str, Any] | None, key: str) -> Any:
+        value: Any = source or {}
+        for part in key.split("."):
+            value = (value or {}).get(part)
+        return value
+
+    header = "| Result (one year, Uccle weather) | House as it is |"
+    rule = "| --- | --- |"
+    if renovation_kpis:
+        header += " After the renovation | Saving |"
+        rule += " --- | --- |"
+    lines = [header, rule]
+    for label, key, unit, digits in lines_spec:
+        line = f"| {label} | {_fmt(pick(kpis, key), unit, digits)} |"
+        if renovation_kpis:
+            saving = (comparison or {}).get(key.split(".")[-1]) or {}
+            saved = _fmt(saving.get("saving"), unit, digits)
+            percent = f" ({saving['saving_percent']}%)" if saving.get("saving_percent") is not None else ""
+            line += f" {_fmt(pick(renovation_kpis, key), unit, digits)} | {saved}{percent} |"
+        lines.append(line)
+    lines.append(
+        f"| Heated floor area | {kpis['heated_floor_area_m2']:.0f} m2 |" + (" | |" if renovation_kpis else "")
     )
+    if energy.get("note"):
+        lines += ["", f"_{energy['note']}_"]
+    split = kpis.get("heat_loss_split") or {}
+    if split.get("share_percent"):
+        lines += [
+            "",
+            "| Where the heat goes (estimate) | Share | kWh/year |",
+            "| --- | --- | --- |",
+            *(
+                f"| {name.capitalize()} | {share}% | {split['estimated_kwh'][name]:,} |"
+                for name, share in split["share_percent"].items()
+            ),
+        ]
+    return "\n".join(lines)
 
 
 @dataclass
@@ -192,6 +267,8 @@ class View:
     phase: str = "intake"
     progress: list[str] = field(default_factory=list)
     kpis: dict[str, Any] | None = None
+    renovation_kpis: dict[str, Any] | None = None
+    comparison: dict[str, Any] | None = None
     message_ids: dict[int, str] = field(default_factory=dict)  # history index -> stored message id
 
     def assistant(self, text: str = "") -> int:
@@ -225,9 +302,14 @@ class View:
                     f"Number check: {', '.join(data['wrong'])} not in the results, {action}."
                 )
             case "run_phase":
-                self.progress.append(f"{data.get('kind', 'run')}: {data['phase']}")
+                scenario = f" ({data['scenario']})" if data.get("scenario") == "renovation" else ""
+                self.progress.append(f"{data.get('kind', 'run')}{scenario}: {data['phase']}")
+            case "kpis" if data.get("scenario") == "renovation":
+                self.renovation_kpis = data["kpis"]
             case "kpis":
-                self.kpis = data["kpis"]
+                self.kpis, self.renovation_kpis, self.comparison = data["kpis"], None, None
+            case "comparison":
+                self.comparison = data["comparison"]
             case "brief":
                 self.card = data
             case "questions":
@@ -276,7 +358,7 @@ def build_ui(api: ApiClient, settings: Settings) -> gr.Blocks:
             card_html(view.card),
             f"**{phase}**"
             + ("\n\n" + "\n".join(f"- {line}" for line in view.progress[-8:]) if view.progress else ""),
-            kpi_markdown(view.kpis),
+            kpi_markdown(view.kpis, view.renovation_kpis, view.comparison),
             gr.update(interactive=view.phase == "confirm"),
             *titles,
             *buttons,
@@ -288,7 +370,10 @@ def build_ui(api: ApiClient, settings: Settings) -> gr.Blocks:
         view = View()
         try:
             view.session_id = api.create_session()
-            view.card = api.get_session(view.session_id)["card"]
+            state = api.get_session(view.session_id)
+            view.card = state["card"]
+            view.kpis, view.renovation_kpis = state.get("kpis"), state.get("renovation_kpis")
+            view.comparison = state.get("comparison")
         except httpx.HTTPError as error:
             log.warning("session unavailable error=%r", error)
             view.assistant(f"[error] the api is not reachable: {error}")
@@ -393,7 +478,8 @@ def main() -> None:
     configure_logging()
     settings = Settings()
     log.info("ui start api_url=%s", settings.api_url)
-    build_ui(ApiClient(settings.api_url), settings).launch(server_name="0.0.0.0", server_port=7860)
+    api = ApiClient(settings.api_url, token=settings.api_token)
+    build_ui(api, settings).launch(server_name="0.0.0.0", server_port=7860)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,13 @@
+# The eval gate (phase 3): thresholds on the summary metrics of `python -m llmtrano.evals.run`.
+# Each entry is a field of `llmtrano.evals.metrics.Summary` with `min` or `max`. A metric the run could not
+# measure fails its threshold. Starting values, to be tuned by Ando after the first live runs.
+field_accuracy: {min: 0.90}
+scenario_accuracy: {min: 0.90}
+turns_to_confirmation_max: {max: 6}
+valid_model_rate: {min: 0.95}
+simulation_success: {min: 0.95}
+number_faithfulness: {min: 0.80}
+unsupported_handled: {min: 1.0}
+renovation_success: {min: 0.90}
+reference_checks_ok: {min: 0.50}
+turn_s_p95: {max: 60}

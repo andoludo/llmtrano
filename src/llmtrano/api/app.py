@@ -8,11 +8,12 @@ database, the Valkey pool, the LLM client and the workflow's Postgres checkpoint
 import asyncio
 import json
 import logging
+import secrets
 import uuid
 from collections import defaultdict
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import AsyncExitStack, asynccontextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Annotated, Any, Literal, Protocol
 
@@ -20,6 +21,7 @@ import yaml
 from arq import create_pool
 from arq.connections import ArqRedis, RedisSettings
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
+from fastapi.responses import JSONResponse
 from fastapi.sse import EventSourceResponse, ServerSentEvent
 from openai import AsyncOpenAI
 from pydantic import BaseModel, ConfigDict, Field
@@ -27,6 +29,7 @@ from redis.asyncio import Redis
 from sqlalchemy import text
 from sqlalchemy.orm import Session, sessionmaker
 
+from llmtrano.api.limits import RateLimiter
 from llmtrano.api.sessions import Graph
 from llmtrano.api.sessions import router as sessions_router
 from llmtrano.db.migrate import upgrade_head
@@ -37,6 +40,7 @@ from llmtrano.jobs.progress import TERMINAL_PHASES, channel
 from llmtrano.jobs.queue import SIMULATION_JOB, WorkerJobs
 from llmtrano.llm.client import make_llm_client
 from llmtrano.logs import configure_logging
+from llmtrano.metrics import exposition
 from llmtrano.settings import Settings
 from llmtrano.workflow.checkpoint import postgres_checkpointer
 from llmtrano.workflow.deps import Deps
@@ -62,6 +66,11 @@ class Services:
     llm: AsyncOpenAI
     graph: Graph
     valkey_url: str
+    settings: Settings = field(default_factory=Settings)
+    checkpointer: Any = None  # the LangGraph saver, for erasing a session's thread (phase 3)
+
+
+EXEMPT_FROM_TOKEN = frozenset({"/health", "/metrics", "/docs", "/openapi.json", "/redoc"})
 
 
 # ---------- request and response bodies
@@ -84,6 +93,7 @@ class RunOut(BaseModel):
     created_at: datetime
     status: RunStatus
     kind: str
+    scenario: str
     session_id: uuid.UUID | None
     phase: str | None
     errors: list[str] | None
@@ -125,6 +135,8 @@ async def _open_services(settings: Settings, stack: AsyncExitStack) -> Services:
         llm=llm,
         graph=build_graph(deps, checkpointer),
         valkey_url=settings.valkey_url,
+        settings=settings,
+        checkpointer=checkpointer,
     )
 
 
@@ -136,16 +148,34 @@ def create_app(services: Services | None = None) -> FastAPI:
         app.state.session_locks = defaultdict(asyncio.Lock)
         if services is not None:
             app.state.services = services
+            app.state.limiter = RateLimiter(services.settings.rate_limit_per_minute)
             yield
             return
         configure_logging()  # uvicorn configures only its own loggers
         async with AsyncExitStack() as stack:
             app.state.services = await _open_services(Settings(), stack)
-            log.info("api ready")
+            app.state.limiter = RateLimiter(app.state.services.settings.rate_limit_per_minute)
+            log.info("api ready token=%s", "set" if app.state.services.settings.api_token else "none")
             yield
 
     app = FastAPI(title="llmtrano", version="0.1.0", lifespan=lifespan)
+
+    @app.middleware("http")
+    async def guard(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
+        """Bearer token when API_TOKEN is set (health, metrics and docs stay open); security headers."""
+        token = request.app.state.services.settings.api_token
+        if token and request.url.path not in EXEMPT_FROM_TOKEN:
+            header = request.headers.get("authorization", "")
+            if not (header.startswith("Bearer ") and secrets.compare_digest(header[7:], token)):
+                return JSONResponse({"detail": "missing or wrong bearer token"}, status_code=401)
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["Referrer-Policy"] = "no-referrer"
+        return response
+
     app.add_api_route("/health", health, methods=["GET"], response_model=Health)
+    app.add_api_route("/metrics", prometheus_metrics, methods=["GET"], include_in_schema=False)
     app.add_api_route("/models", models, methods=["GET"])
     app.add_api_route("/runs", create_run, methods=["POST"], status_code=status.HTTP_201_CREATED)
     app.add_api_route("/runs/{run_id}", get_run, methods=["GET"])
@@ -194,6 +224,13 @@ async def health(request: Request, response: Response) -> Health:
     else:
         overall = "ok" if llm == "ok" else "degraded"
     return Health(status=overall, db=db, queue=queue, llm=llm)
+
+
+async def prometheus_metrics() -> Response:
+    """The api's Prometheus metrics (LLM calls, guardrail, turns, runs), scraped by the observability
+    profile."""
+    body, content_type = exposition()
+    return Response(content=body, media_type=content_type)
 
 
 async def models(request: Request) -> list[str]:

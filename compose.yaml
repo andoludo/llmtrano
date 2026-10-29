@@ -40,6 +40,8 @@ services:
       RUNS_DIR: /runs
       SIMULATION_LIBRARY: ${SIMULATION_LIBRARY:-Buildings}
       SIMULATION_TIMEOUT_S: ${SIMULATION_TIMEOUT_S:-1200}
+      RETENTION_DAYS: ${RETENTION_DAYS:-90}
+      LOG_FORMAT: ${LOG_FORMAT:-text}
     volumes:
       - runs:/runs
     depends_on:
@@ -70,6 +72,13 @@ services:
       LLM_BASE_URL: http://llm:8080/v1
       LLM_DEFAULT_MODEL: ${LLM_DEFAULT_MODEL:-qwen3.5-9b}
       LLM_INTERPRET_MODEL: ${LLM_INTERPRET_MODEL:-qwen3.6-35b-a3b}
+      API_TOKEN: ${API_TOKEN:-}
+      RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:-30}
+      LOG_FORMAT: ${LOG_FORMAT:-text}
+      ENERGY_PRICE_GAS_EUR_PER_KWH: ${ENERGY_PRICE_GAS_EUR_PER_KWH:-0.10}
+      ENERGY_PRICE_ELECTRICITY_EUR_PER_KWH: ${ENERGY_PRICE_ELECTRICITY_EUR_PER_KWH:-0.35}
+      CO2_GAS_KG_PER_KWH: ${CO2_GAS_KG_PER_KWH:-0.202}
+      CO2_ELECTRICITY_KG_PER_KWH: ${CO2_ELECTRICITY_KG_PER_KWH:-0.20}
     ports:
       - "127.0.0.1:8000:8000"
     depends_on:
@@ -95,6 +104,7 @@ services:
     command: ["python", "-m", "llmtrano.ui.app"]
     environment:
       API_URL: http://api:8000
+      API_TOKEN: ${API_TOKEN:-}
       LLM_DEFAULT_MODEL: ${LLM_DEFAULT_MODEL:-qwen3.5-9b}
       SIMULATION_TIMEOUT_S: ${SIMULATION_TIMEOUT_S:-1200}
       GRADIO_ANALYTICS_ENABLED: "False"
@@ -164,7 +174,42 @@ services:
       retries: 6
     restart: unless-stopped
 
+  prometheus:
+    profiles: [observability]
+    image: prom/prometheus:v3.5.0
+    volumes:
+      - ./config/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus:/prometheus
+    ports:
+      - "127.0.0.1:9090:9090"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+  grafana:
+    profiles: [observability]
+    image: grafana/grafana:12.1.0
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - ./config/grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana:/var/lib/grafana
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
 volumes:
   models:
   pgdata:
   runs:
+  prometheus:
+  grafana:

@@ -171,6 +171,16 @@ PARTY_WALL = Construction(  # PARTY_WALL:001 of both cases: half of the 19 cm br
         Layer(material="PLASTER:001", thickness=0.015),
     ),
 )
+INTERMEDIATE_FLOOR = (
+    Construction(  # INTERMEDIATE_FLOOR:001 of both cases: boards on joists, plasterboard ceiling
+        id="INTERMEDIATE_FLOOR:001",
+        layers=(
+            Layer(material="TIMBER:001", thickness=0.022),
+            Layer(material="JOIST_AIR_10CM:001", thickness=0.1),
+            Layer(material="GYPSUM_BOARD:001", thickness=0.015),
+        ),
+    )
+)
 
 # Insulation material and thickness [m] per level; "good" is the after-renovation case.
 INSULATION: dict[Element, tuple[str, dict[InsulationLevel, float]]] = {

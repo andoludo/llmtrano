@@ -195,9 +195,20 @@ When the LinkML/Pydantic validation in `convert_network` fails, produce one line
 description from `trano_final.yaml`. llmtrano shows these lines to the LLM repair step
 and, if still failing, to the user.
 
-## Later (not in phase 0 or 1)
+## Proposed after phase 2 (not started; Ando decides, see docs/phase-2-review.md)
+
+Found while building phase 2 of llmtrano (2026-10-28). Nothing in the trano repository was changed.
+
+| Id | Change | Why |
+| --- | --- | --- |
+| T9 | `trano.kpi`: energy from the ideal heater's `EHea` meter instead of the trapezoid | reads 1.5% high on an hourly grid, 5 to 19 times with spiky heaters (docs/measurements.md) |
+| T10 | `trano.kpi` for radiators and generators: heat per zone from `radiator.Q_flow`, fuel and electricity from the `EFue`, `EEle`, `EHea` meters of the boiler templates, pumps' `P` | llmtrano does it in `llmtrano.kpi.compute`; it belongs next to the templates that define the variables |
+| T11 | Heat-loss split per element from the result file (Buildings: `conExt[i].opa_b.Q_flow`, `conExtWin[i].glaUns_b.Q_flow`, `conBou[i].opa_b.Q_flow`, infiltration from the air ports) with the surface order documented | llmtrano gives a steady-state estimate; the simulated split would name the drivers with real numbers |
+| T12 | Small fixes: `py.typed`, a non-keyword default package name for dict inputs (`model` is a Modelica keyword), the numpy `float32` serializer warnings in `convert_network`, `validate_schema` accepting an empty control mapping (`collector_control:` with no id, as the reference YAML writes it) | found in phase 1 and 2 |
+
+## Later (not in phase 0 to 2)
 
 - `trano schema --format json-schema` and per-class "LLM slices" with a schema hash.
 - Archetype builder: `examples/residential_cases.py` generalised into `trano.archetypes`.
 - Overlay helper: apply a renovation patch to a model dict.
-- Default `variable_filter` for KPI variables; heat-loss split per element.
+- Default `variable_filter` for KPI variables.

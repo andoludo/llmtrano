@@ -1,0 +1,73 @@
+# Grounded references (phase 3, step 3.4): published results the explanation may compare a house with.
+#
+# Every entry has a source that a reader can open; nothing here is an estimate of ours. The retrieval
+# (llmtrano.knowledge.retrieve) picks the entries whose `applies_to` matches the house: building type,
+# construction period, and whether the house is the renovated scenario. The numbers join the guardrail's
+# known values, so the explanation may quote them, and the prompt asks it to name the source.
+#
+# Fields: id, title (what the number is, in plain words), metric (a key of the KPI summary it compares
+# with), value, unit, applies_to {building_types: [...], periods: [...], renovated: true|false|null},
+# conditions (one line), source (document and section).
+
+- id: trano_reference_before_heating
+  title: "trano's reference semi-detached house from the sixties, before renovation: heat delivered by the radiators"
+  metric: heating_energy_kwh_per_m2
+  value: 130
+  unit: kWh/m2 per year
+  applies_to: {building_types: [semi_detached, terraced], periods: [before_1946, y1946_1970], renovated: false}
+  conditions: "six zones, 110 m2, uninsulated cavity walls, old double glazing, n50 12, gas boiler, Uccle weather, Buildings 13.0.0"
+  source: "trano docs/validation/residential_reference_cases.md, Results over a year"
+
+- id: trano_reference_before_design_loss
+  title: "trano's reference house before renovation: design heat loss at -8 degC"
+  metric: design_heat_loss_w_per_m2
+  value: 97
+  unit: W/m2
+  applies_to: {building_types: [semi_detached, terraced], periods: [before_1946, y1946_1970], renovated: false}
+  conditions: "EN 12831 simplified, thermal bridges 0.10 W/m2K, 0.5 1/h natural ventilation"
+  source: "trano docs/validation/residential_reference_cases.md, Systems and sizing"
+
+- id: trano_reference_before_gas
+  title: "trano's reference house before renovation: gas use of the 16 kW non-condensing boiler"
+  metric: final_energy_kwh_per_m2
+  value: 174
+  unit: kWh/m2 per year (19,188 kWh on the lower heating value)
+  applies_to: {building_types: [semi_detached, terraced], periods: [before_1946, y1946_1970], renovated: false}
+  conditions: "efficiency 0.85 on the lower heating value, 75 degC supply, Buildings"
+  source: "trano docs/validation/residential_reference_cases.md, Results over a year"
+
+- id: trano_reference_after_heating
+  title: "trano's reference house after a deep renovation (12 cm EPS, 22 cm roof, 8 cm floor, triple glazing, n50 3, heat pump, system D): heat delivered by the radiators"
+  metric: heating_energy_kwh_per_m2
+  value: 17.6
+  unit: kWh/m2 per year
+  applies_to: {building_types: [semi_detached, terraced], periods: [], renovated: true}
+  conditions: "the same six zones and use, 80% heat recovery, Buildings 13.0.0"
+  source: "trano docs/validation/residential_reference_cases.md, Results over a year"
+
+- id: trano_reference_after_design_loss
+  title: "trano's reference house after the deep renovation: design heat loss at -8 degC"
+  metric: design_heat_loss_w_per_m2
+  value: 21
+  unit: W/m2
+  applies_to: {building_types: [semi_detached, terraced], periods: [], renovated: true}
+  conditions: "EN 12831 simplified, thermal bridges 0.05 W/m2K, supply air after 80% heat recovery"
+  source: "trano docs/validation/residential_reference_cases.md, Systems and sizing"
+
+- id: trano_reference_after_electricity
+  title: "trano's reference house after the renovation: electricity of the 3 kW air-water heat pump (seasonal COP 3.77)"
+  metric: final_energy_kwh_per_m2
+  value: 4.8
+  unit: kWh/m2 per year (529 kWh)
+  applies_to: {building_types: [semi_detached, terraced], periods: [], renovated: true}
+  conditions: "heating curve 40 degC at -8 degC to 30 degC at 16 degC, 100 l buffer, Buildings"
+  source: "trano docs/validation/residential_reference_cases.md, Results over a year"
+
+- id: trano_tutorial_heating
+  title: "trano's tutorial house (detached, one storey, 100 m2, 12 cm wall insulation, flat roof with 16 cm, double glazing, 0.5 1/h): heating need"
+  metric: heating_energy_kwh_per_m2
+  value: 60.0
+  unit: kWh/m2 per year
+  applies_to: {building_types: [detached], periods: [y1991_2005, y2006_2020, after_2020], renovated: false}
+  conditions: "ideal heater, 21 degC from 7 to 23 h and 18 degC at night, Uccle weather, Buildings"
+  source: "llmtrano docs/measurements.md, phase 1 gate (first_model.yaml simulated directly, 5,996 kWh)"

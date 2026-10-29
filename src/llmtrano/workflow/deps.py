@@ -12,7 +12,7 @@ from typing import Any, Protocol
 from openai import AsyncOpenAI
 from pydantic import BaseModel
 
-from llmtrano.brief.model import Fact, HouseBrief, Provenance
+from llmtrano.brief.model import Fact, HouseBrief, Provenance, Scenario
 from llmtrano.compiler.compile import CompiledModel
 from llmtrano.llm.calls import CallStats
 from llmtrano.settings import Settings
@@ -38,10 +38,16 @@ class SimulationOutcome(BaseModel):
 class Jobs(Protocol):
     """The worker jobs, awaited: each call creates a ``runs`` row, queues the job and waits for its end."""
 
-    async def check_model(self, session_id: str, compiled: CompiledModel) -> CheckOutcome: ...
+    async def check_model(
+        self, session_id: str, compiled: CompiledModel, scenario: Scenario = "baseline"
+    ) -> CheckOutcome: ...
 
     async def simulate(
-        self, session_id: str, compiled: CompiledModel, on_phase: PhaseCallback
+        self,
+        session_id: str,
+        compiled: CompiledModel,
+        on_phase: PhaseCallback,
+        scenario: Scenario = "baseline",
     ) -> SimulationOutcome: ...
 
 
@@ -61,6 +67,7 @@ class Recorder(Protocol):
         provenance: Provenance,
         schema_hash: str | None,
         confirmed: bool,
+        scenario: Scenario = "baseline",
     ) -> None: ...
 
 
@@ -80,6 +87,7 @@ class NullRecorder:
         provenance: Provenance,
         schema_hash: str | None,
         confirmed: bool,
+        scenario: Scenario = "baseline",
     ) -> None:
         return None
 

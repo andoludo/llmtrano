@@ -1,0 +1,8 @@
+# Prometheus for the `observability` compose profile: scrapes the api's /metrics every 15 s.
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: llmtrano-api
+    static_configs:
+      - targets: ["api:8000"]

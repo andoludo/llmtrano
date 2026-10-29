@@ -19,11 +19,14 @@ from llmtrano.brief.model import (
     BriefField,
     BuildingType,
     Glazing,
+    HeatingSystem,
     HouseBrief,
     InsulationLevel,
     Period,
     Provenance,
     Source,
+    Ventilation,
+    Zoning,
 )
 
 MAX_QUESTIONS = 2
@@ -37,6 +40,8 @@ PRIORITY: tuple[BriefField, ...] = (
     "glazing",
     "roof_insulation",
     "airtightness",
+    "heating_system",
+    "ventilation",
     "floor_insulation",
     "heating_setpoint_day_c",
     "heating_setpoint_night_c",
@@ -66,6 +71,15 @@ LABELS: dict[str, str] = {
     Airtightness.leaky: "Draughty",
     Airtightness.average: "Average",
     Airtightness.tight: "Airtight",
+    Ventilation.natural: "Natural (windows, grilles)",
+    Ventilation.mechanical_extract: "Mechanical extract (system C)",
+    Ventilation.balanced_heat_recovery: "Balanced with heat recovery (system D)",
+    HeatingSystem.gas_boiler_old: "Old gas boiler",
+    HeatingSystem.gas_boiler_condensing: "Condensing gas boiler",
+    HeatingSystem.heat_pump_air_water: "Air-water heat pump",
+    HeatingSystem.unknown: "Not known (heating need only)",
+    Zoning.one: "One zone",
+    Zoning.day_night: "Day and night zones",
 }
 SEEDS: dict[str, str] = {
     "building_type": "What kind of house is it: detached, semi-detached (one shared wall) or terraced?",
@@ -76,6 +90,9 @@ SEEDS: dict[str, str] = {
     "glazing": "What kind of glazing do the windows have?",
     "roof_insulation": "Is the roof, or the attic floor, insulated?",
     "airtightness": "Is the house draughty, average or airtight?",
+    "heating_system": "How is the house heated: an old gas boiler, a condensing gas boiler or a heat pump?",
+    "ventilation": "How is the house ventilated: by opening windows, a mechanical extract system (C) or "
+    "balanced ventilation with heat recovery (D)?",
     "floor_insulation": "Is the ground floor insulated?",
     "heating_setpoint_day_c": "What temperature do you keep the house at during the day?",
     "heating_setpoint_night_c": "And at night?",
@@ -117,6 +134,9 @@ def options_for(field: BriefField) -> list[Option]:
         "floor_insulation": InsulationLevel,
         "glazing": Glazing,
         "airtightness": Airtightness,
+        "ventilation": Ventilation,
+        "heating_system": HeatingSystem,
+        "zoning": Zoning,
     }
     if field in enums:
         members = [m for m in enums[field] if m.value != "unknown"]
@@ -195,10 +215,19 @@ def next_questions(
 
 
 def ready_to_confirm(
-    brief: HouseBrief, provenance: Provenance, conflicts: list[Conflict], *, user_says_complete: bool
+    brief: HouseBrief,
+    provenance: Provenance,
+    conflicts: list[Conflict],
+    *,
+    user_says_complete: bool,
+    confirmed_before: bool = False,
 ) -> bool:
     """All required fields stated, no conflict, a supported building, and either the user said the description
-    is complete or the walls, roof and glazing are user-given ("I don't know" counts as an answer)."""
+    is complete or the walls, roof and glazing are user-given ("I don't know" counts as an answer).
+
+    A Brief that was confirmed and simulated before (phase 2: a renovation added after the result) is ready
+    again as soon as the required fields hold and nothing conflicts.
+    """
     if conflicts or brief.building_type is BuildingType.apartment:
         return False
     required = all(
@@ -210,7 +239,7 @@ def ready_to_confirm(
     envelope = all(
         (said := provenance.get(name)) is not None and said.source is Source.user for name in ENVELOPE_FIELDS
     )
-    return required and (user_says_complete or envelope)
+    return required and (user_says_complete or envelope or confirmed_before)
 
 
 def _plain(value: object) -> object:

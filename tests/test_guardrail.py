@@ -96,3 +96,25 @@ def test_retry_note_and_fallback() -> None:
     text = fallback_text(KPIS)
     assert "6085 kWh" in text and "60.9 kWh per m2" in text and "3862 W" in text
     assert check_numbers(text, KPIS, BRIEF).passed
+
+
+def test_fallback_names_the_system_and_the_renovation() -> None:
+    kpis = {
+        **KPIS,
+        "energy": {"fuel": "gas", "final_energy_kwh": 7500.4, "cost_eur": 750, "co2_kg": 1515},
+    }
+    renovation = {**KPIS, "heating_energy_kwh": 3000.0}
+    comparison = {
+        "heating_energy_kwh": {
+            "baseline": 6085.5,
+            "renovation": 3000.0,
+            "saving": 3085.5,
+            "saving_percent": 51,
+        }
+    }
+    text = fallback_text(kpis, renovation, comparison)
+    assert "uses 7500 kWh of gas, about 750 EUR and 1515 kg of CO2" in text
+    assert "After the renovation it needs 3000 kWh, 3086 kWh (51%) less." in text
+    assert check_numbers(
+        text, {"baseline": kpis, "renovation": renovation, "comparison": comparison}, BRIEF
+    ).passed

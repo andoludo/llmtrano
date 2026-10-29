@@ -1,0 +1,21 @@
+# Grafana datasources for the `observability` compose profile: Prometheus (api metrics) and the Postgres
+# database (runs, messages, KPIs). The Postgres credentials come from compose's environment.
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    uid: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+  - name: Postgres
+    type: grafana-postgresql-datasource
+    uid: postgres
+    url: db:5432
+    user: $POSTGRES_USER
+    secureJsonData:
+      password: $POSTGRES_PASSWORD
+    jsonData:
+      database: $POSTGRES_DB
+      sslmode: disable

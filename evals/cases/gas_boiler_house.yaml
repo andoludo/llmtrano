@@ -1,0 +1,21 @@
+id: gas_boiler_house
+note: "a stated heating system and ventilation (phase 2): the model gets radiators and a condensing boiler"
+opening: >-
+  Semi-detached house from 1995, 150 m2 on two floors, in Mechelen. We have a condensing gas boiler with
+  radiators and a mechanical extract system in the bathroom and kitchen. HR++ glazing, the cavity walls have
+  6 cm of insulation and the roof 12 cm.
+answers:
+  airtightness: "Average, I would say."
+  floor_insulation: "I don't know."
+expected:
+  building_type: semi_detached
+  construction_period: y1991_2005
+  heated_floor_area_m2: 150
+  storeys: 2
+  municipality: Mechelen
+  heating_system: gas_boiler_condensing
+  ventilation: mechanical_extract
+  glazing: double_low_e
+  wall_insulation: medium
+  roof_insulation: medium
+  airtightness: average

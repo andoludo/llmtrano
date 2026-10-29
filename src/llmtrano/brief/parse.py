@@ -15,10 +15,13 @@ from llmtrano.brief.model import (
     Airtightness,
     BuildingType,
     Glazing,
+    HeatingSystem,
     HouseBrief,
     InsulationLevel,
     Orientation,
     Period,
+    Ventilation,
+    Zoning,
 )
 
 SQUARE_FOOT_M2 = 0.09290304
@@ -238,21 +241,110 @@ AIRTIGHTNESS: dict[str, Airtightness] = {
 ORIENTATIONS: dict[str, Orientation] = {
     "north": Orientation.north,
     "noord": Orientation.north,
+    "noorden": Orientation.north,
     "nord": Orientation.north,
     "n": Orientation.north,
     "east": Orientation.east,
     "oost": Orientation.east,
+    "oosten": Orientation.east,
     "est": Orientation.east,
     "e": Orientation.east,
     "o": Orientation.east,
     "south": Orientation.south,
     "zuid": Orientation.south,
+    "zuiden": Orientation.south,
     "sud": Orientation.south,
     "s": Orientation.south,
     "z": Orientation.south,
     "west": Orientation.west,
+    "westen": Orientation.west,
     "ouest": Orientation.west,
     "w": Orientation.west,
+}
+# Specific words first: "system D" and "heat recovery" before "mechanical"; "condensing" before "gas boiler".
+VENTILATIONS: dict[str, Ventilation] = {
+    "balanced_heat_recovery": Ventilation.balanced_heat_recovery,
+    "heat recovery": Ventilation.balanced_heat_recovery,
+    "balanced": Ventilation.balanced_heat_recovery,
+    "system d": Ventilation.balanced_heat_recovery,
+    "systeem d": Ventilation.balanced_heat_recovery,
+    "système d": Ventilation.balanced_heat_recovery,
+    "type d": Ventilation.balanced_heat_recovery,
+    "warmteterugwinning": Ventilation.balanced_heat_recovery,
+    "wtw": Ventilation.balanced_heat_recovery,
+    "double flux": Ventilation.balanced_heat_recovery,
+    "récupération de chaleur": Ventilation.balanced_heat_recovery,
+    "mechanical_extract": Ventilation.mechanical_extract,
+    "extract": Ventilation.mechanical_extract,
+    "extractor": Ventilation.mechanical_extract,
+    "system c": Ventilation.mechanical_extract,
+    "systeem c": Ventilation.mechanical_extract,
+    "système c": Ventilation.mechanical_extract,
+    "type c": Ventilation.mechanical_extract,
+    "afzuiging": Ventilation.mechanical_extract,
+    "afvoer": Ventilation.mechanical_extract,
+    "simple flux": Ventilation.mechanical_extract,
+    "mechanical": Ventilation.mechanical_extract,
+    "mechanisch": Ventilation.mechanical_extract,
+    "mécanique": Ventilation.mechanical_extract,
+    "natural": Ventilation.natural,
+    "natuurlijk": Ventilation.natural,
+    "naturelle": Ventilation.natural,
+    "windows": Ventilation.natural,
+    "ramen": Ventilation.natural,
+    "fenêtres": Ventilation.natural,
+    "grilles": Ventilation.natural,
+    "roosters": Ventilation.natural,
+    "no ventilation": Ventilation.natural,
+    "geen ventilatie": Ventilation.natural,
+    "none": Ventilation.natural,
+}
+HEATING_SYSTEMS: dict[str, HeatingSystem] = {
+    "heat_pump_air_water": HeatingSystem.heat_pump_air_water,
+    "heat pump": HeatingSystem.heat_pump_air_water,
+    "heatpump": HeatingSystem.heat_pump_air_water,
+    "warmtepomp": HeatingSystem.heat_pump_air_water,
+    "pompe à chaleur": HeatingSystem.heat_pump_air_water,
+    "pac": HeatingSystem.heat_pump_air_water,
+    "gas_boiler_condensing": HeatingSystem.gas_boiler_condensing,
+    "condensing": HeatingSystem.gas_boiler_condensing,
+    "condensatieketel": HeatingSystem.gas_boiler_condensing,
+    "condensatie": HeatingSystem.gas_boiler_condensing,
+    "condenserend": HeatingSystem.gas_boiler_condensing,
+    "condensation": HeatingSystem.gas_boiler_condensing,
+    "hr-ketel": HeatingSystem.gas_boiler_condensing,
+    "hr ketel": HeatingSystem.gas_boiler_condensing,
+    "new boiler": HeatingSystem.gas_boiler_condensing,
+    "nieuwe ketel": HeatingSystem.gas_boiler_condensing,
+    "gas_boiler_old": HeatingSystem.gas_boiler_old,
+    "old boiler": HeatingSystem.gas_boiler_old,
+    "oude ketel": HeatingSystem.gas_boiler_old,
+    "vieille chaudière": HeatingSystem.gas_boiler_old,
+    "non-condensing": HeatingSystem.gas_boiler_old,
+    "gas boiler": HeatingSystem.gas_boiler_old,
+    "gasketel": HeatingSystem.gas_boiler_old,
+    "chaudière": HeatingSystem.gas_boiler_old,
+    "boiler": HeatingSystem.gas_boiler_old,
+    "ketel": HeatingSystem.gas_boiler_old,
+    "gas": HeatingSystem.gas_boiler_old,
+}
+ZONINGS: dict[str, Zoning] = {
+    "day_night": Zoning.day_night,
+    "day and night": Zoning.day_night,
+    "day/night": Zoning.day_night,
+    "night zone": Zoning.day_night,
+    "dag en nacht": Zoning.day_night,
+    "nachtzone": Zoning.day_night,
+    "jour et nuit": Zoning.day_night,
+    "zone nuit": Zoning.day_night,
+    "two zones": Zoning.day_night,
+    "twee zones": Zoning.day_night,
+    "one": Zoning.one,
+    "single": Zoning.one,
+    "one zone": Zoning.one,
+    "whole house": Zoning.one,
+    "één zone": Zoning.one,
+    "une zone": Zoning.one,
 }
 INSULATION_WORDS: dict[str, InsulationLevel] = {
     "none": InsulationLevel.none,
@@ -335,11 +427,27 @@ def parse_airtightness(text: str) -> Airtightness:
     return _lookup(AIRTIGHTNESS, text, "airtightness")
 
 
+def parse_ventilation(text: str) -> Ventilation:
+    if is_unknown(text):
+        return Ventilation.unknown
+    return _lookup(VENTILATIONS, text, "ventilation")
+
+
+def parse_heating_system(text: str) -> HeatingSystem:
+    if is_unknown(text):
+        return HeatingSystem.unknown
+    return _lookup(HEATING_SYSTEMS, text, "heating_system")
+
+
+def parse_zoning(text: str) -> Zoning:
+    return _lookup(ZONINGS, text, "zoning")
+
+
 def parse_orientation(text: str) -> Orientation:
     lowered = _normal(text)
     found = {orientation for word, orientation in ORIENTATIONS.items() if _word(word, lowered).start() >= 0}
     if len(found) != 1:
-        raise ParseError(f"street_facade_orientation: {text!r} is not one of north, east, south, west")
+        raise ParseError(f"orientation: {text!r} is not one of north, east, south, west")
     return found.pop()
 
 
@@ -417,14 +525,18 @@ PARSERS: dict[str, Callable[[str], Any]] = {
     "construction_period": parse_period,
     "heated_floor_area_m2": parse_area,
     "storeys": parse_storeys,
+    "zoning": parse_zoning,
     "room_height_m": parse_height,
     "street_facade_orientation": parse_orientation,
+    "main_window_orientation": parse_orientation,
     "wall_insulation": insulation_parser("wall_insulation"),
     "roof_insulation": insulation_parser("roof_insulation"),
     "floor_insulation": insulation_parser("floor_insulation"),
     "glazing": parse_glazing,
     "window_to_wall_ratio": parse_ratio,
     "airtightness": parse_airtightness,
+    "ventilation": parse_ventilation,
+    "heating_system": parse_heating_system,
     "heating_setpoint_day_c": parse_temperature,
     "heating_setpoint_night_c": parse_temperature,
     "day_start_h": parse_hour,

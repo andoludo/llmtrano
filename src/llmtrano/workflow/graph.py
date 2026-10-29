@@ -1,9 +1,12 @@
-"""The phase 1 workflow as a LangGraph graph (#38, #39 workflow over agent, #40, #41 human in the loop).
+"""The workflow as a LangGraph graph (#38, #39 workflow over agent, #40, #41 human in the loop).
 
 Intake turn: ``ingest -> extract -> merge -> plan -> respond``, then END (wait for the next user message) or,
 when the Brief is ready, ``confirm``: an ``interrupt()`` with the Brief card. Nothing is simulated before the
-user approves it. Approved: ``compile -> check -> simulate -> kpis -> interpret``. Rejected with card edits:
-``merge -> plan -> respond``; with a chat message: ``ingest -> extract -> ...``.
+user approves it. Approved: ``compile -> check -> simulate -> kpis``, once for the baseline and, when
+renovation facts exist, once more for the renovation scenario (``kpis -> compile``), then ``compare`` (Python
+computes the differences) and ``interpret``. Rejected with card edits: ``merge -> plan -> respond``; with a
+chat message: ``ingest -> extract -> ...``. After a result, a message with new renovation plans goes through
+the intake again and only the renovation scenario is simulated; a change to the baseline reruns both.
 
 Python decides every step; the LLM extracts, words the reply and explains the numbers. Reply tokens and run
 progress go out through LangGraph's custom stream (``stream_mode="custom"``) as ``{"event": ..., ...}``.
@@ -28,13 +31,19 @@ from llmtrano.brief.card import build_card
 from llmtrano.brief.defaults import apply_defaults
 from llmtrano.brief.merge import Conflict, merge_facts
 from llmtrano.brief.model import Fact, FieldProvenance, HouseBrief
+from llmtrano.brief.overlay import renovation_brief, renovation_changes
 from llmtrano.brief.parse import ParseError, parse_value
 from llmtrano.brief.plan import Option, Question, next_questions, ready_to_confirm
 from llmtrano.compiler.compile import BriefNotReadyError, CompiledModel, compile_brief
 from llmtrano.guardrails.numbers import GuardrailResult, check_numbers, fallback_text, retry_note
+from llmtrano.knowledge import retrieve
+from llmtrano.kpi.compare import compare as compare_scenarios
+from llmtrano.kpi.energy import enrich
 from llmtrano.llm import calls
 from llmtrano.llm.extraction import extraction_input, run_extraction
 from llmtrano.llm.reply import detect_language, interpret_input, respond_input
+from llmtrano.logs import bind_context
+from llmtrano.metrics import GUARDRAIL, TURNS, timed_run
 from llmtrano.workflow.deps import Deps
 from llmtrano.workflow.state import (
     RECENT_MESSAGES,
@@ -69,6 +78,9 @@ STATE_TYPES: tuple[type, ...] = (
     brief_model.Glazing,
     brief_model.Airtightness,
     brief_model.Orientation,
+    brief_model.Ventilation,
+    brief_model.HeatingSystem,
+    brief_model.Zoning,
 )
 
 
@@ -117,6 +129,8 @@ def build_graph(
     # ---------- intake turn
 
     async def ingest(state: WorkflowState) -> Update:
+        bind_context(session_id=state.session_id)
+        TURNS.inc()
         text = state.message or (state.answer.label if state.answer else "")
         await recorder.message(state.session_id, "user", text)
         language = detect_language(state.message, state.language) if state.message else state.language
@@ -173,7 +187,11 @@ def build_graph(
 
     async def plan(state: WorkflowState) -> Update:
         ready = ready_to_confirm(
-            state.brief, state.provenance, state.conflicts, user_says_complete=state.user_says_complete
+            state.brief,
+            state.provenance,
+            state.conflicts,
+            user_says_complete=state.user_says_complete,
+            confirmed_before=state.kpis is not None,
         )
         questions = (
             [] if ready else next_questions(state.brief, state.provenance, state.conflicts, state.asked)
@@ -208,7 +226,13 @@ def build_graph(
     # ---------- confirmation (human in the loop)
 
     async def confirm(state: WorkflowState) -> Command[Literal["compile", "ingest", "merge"]]:
-        card = build_card(state.brief, state.provenance, state.conflicts, ready=True)
+        card = build_card(
+            state.brief,
+            state.provenance,
+            state.conflicts,
+            ready=True,
+            renovation_facts=state.renovation_facts,
+        )
         decision: dict[str, Any] = interrupt({"card": card.model_dump(mode="json")})
         if decision.get("approved"):
             return Command(goto="compile", update={"phase": Phase.compiling})
@@ -237,59 +261,153 @@ def build_graph(
             },
         )
 
-    # ---------- compile, check, simulate, explain
+    # ---------- compile, check, simulate, compare, explain
 
-    async def compile_(state: WorkflowState) -> Command[Literal["check", "explain_error"]]:
+    def current(state: WorkflowState) -> CompiledModel:
+        compiled = state.renovation_compiled if state.scenario == "renovation" else state.compiled
+        assert compiled is not None
+        return compiled
+
+    async def compile_(state: WorkflowState) -> Command[Literal["check", "explain_error", "compare"]]:
+        """Compile what still needs a run: the baseline when it changed, else the renovation scenario."""
         try:
-            compiled = compile_brief(state.brief, state.provenance)
+            baseline = compile_brief(state.brief, state.provenance)
         except BriefNotReadyError as error:
             return Command(goto="explain_error", update={"errors": [str(error)]})
-        filled, provenance = apply_defaults(state.brief, state.provenance)
-        await recorder.brief(state.session_id, filled, provenance, compiled.schema_hash, confirmed=True)
-        _emit("run_phase", phase="compiled", kind="check")
-        return Command(goto="check", update={"compiled": compiled, "phase": Phase.compiling})
+        baseline_changed = (
+            state.compiled is None or state.compiled.yaml_text != baseline.yaml_text or state.kpis is None
+        )
+        if baseline_changed:
+            filled, provenance = apply_defaults(state.brief, state.provenance)
+            await recorder.brief(state.session_id, filled, provenance, baseline.schema_hash, confirmed=True)
+            _emit("run_phase", phase="compiled", kind="check", scenario="baseline")
+            return Command(
+                goto="check",
+                update={
+                    "compiled": baseline,
+                    "scenario": "baseline",
+                    "phase": Phase.compiling,
+                    "kpis": None,
+                    "run_id": None,
+                    "renovation_compiled": None,
+                    "renovation_run_id": None,
+                    "renovation_kpis": None,
+                    "comparison": None,
+                },
+            )
+        overlay = renovation_brief(state.brief, state.provenance, state.renovation_facts)
+        if overlay is None:
+            return Command(goto="compare", update={"scenario": "baseline"})
+        try:
+            renovation = compile_brief(*overlay)
+        except BriefNotReadyError as error:
+            return Command(goto="explain_error", update={"errors": [f"renovation: {error}"]})
+        same = (
+            state.renovation_compiled is not None
+            and state.renovation_compiled.yaml_text == renovation.yaml_text
+        )
+        if same and state.renovation_kpis is not None:
+            return Command(goto="compare", update={"scenario": "baseline"})
+        filled, provenance = apply_defaults(*overlay)
+        await recorder.brief(
+            state.session_id,
+            filled,
+            provenance,
+            renovation.schema_hash,
+            confirmed=True,
+            scenario="renovation",
+        )
+        _emit("run_phase", phase="compiled", kind="check", scenario="renovation")
+        return Command(
+            goto="check",
+            update={
+                "renovation_compiled": renovation,
+                "scenario": "renovation",
+                "phase": Phase.compiling,
+                "renovation_run_id": None,
+                "renovation_kpis": None,
+                "comparison": None,
+            },
+        )
 
     async def check(state: WorkflowState) -> Command[Literal["simulate", "explain_error"]]:
-        assert state.compiled is not None
-        _emit("run_phase", phase="checking", kind="check")
-        outcome = await deps.jobs.check_model(state.session_id, state.compiled)
+        _emit("run_phase", phase="checking", kind="check", scenario=state.scenario)
+        with timed_run("check", state.scenario) as status:
+            outcome = await deps.jobs.check_model(state.session_id, current(state), scenario=state.scenario)
+            status.append("succeeded" if outcome.ok else "failed")
         if not outcome.ok:
             errors = outcome.errors or [f"the model check failed ({outcome.error_kind})"]
             return Command(goto="explain_error", update={"check_run_id": outcome.run_id, "errors": errors})
         return Command(goto="simulate", update={"check_run_id": outcome.run_id, "phase": Phase.simulating})
 
     async def simulate(state: WorkflowState) -> Command[Literal["kpis", "explain_error"]]:
-        assert state.compiled is not None
+        scenario = state.scenario
 
         async def on_phase(phase: str) -> None:
-            _emit("run_phase", phase=phase, kind="simulate")
+            _emit("run_phase", phase=phase, kind="simulate", scenario=scenario)
 
-        outcome = await deps.jobs.simulate(state.session_id, state.compiled, on_phase)
+        with timed_run("simulate", scenario) as status:
+            outcome = await deps.jobs.simulate(state.session_id, current(state), on_phase, scenario=scenario)
+            status.append("succeeded" if outcome.ok else "failed")
+        run_key = "renovation_run_id" if scenario == "renovation" else "run_id"
         if not outcome.ok:
             reason = (
                 f"{outcome.error_kind}: {outcome.error_message}" if outcome.error_kind else "unknown error"
             )
-            return Command(goto="explain_error", update={"run_id": outcome.run_id, "errors": [reason]})
-        return Command(goto="kpis", update={"run_id": outcome.run_id, "kpis": outcome.kpis})
-
-    async def kpis(state: WorkflowState) -> Command[Literal["interpret", "explain_error"]]:
+            return Command(goto="explain_error", update={run_key: outcome.run_id, "errors": [reason]})
         required = ("heating_energy_kwh", "heating_energy_kwh_per_m2", "peak_heating_w")
-        if not state.kpis or any(state.kpis.get(key) is None for key in required):
-            return Command(goto="explain_error", update={"errors": ["the run has no KPI results"]})
-        _emit("kpis", kpis=state.kpis)
-        return Command(goto="interpret")
+        if not outcome.kpis or any(outcome.kpis.get(key) is None for key in required):
+            return Command(
+                goto="explain_error", update={run_key: outcome.run_id, "errors": ["no KPI results"]}
+            )
+        kpis = enrich(outcome.kpis, current(state).sizing, settings)
+        kpi_key = "renovation_kpis" if scenario == "renovation" else "kpis"
+        return Command(goto="kpis", update={run_key: outcome.run_id, kpi_key: kpis})
+
+    async def kpis(state: WorkflowState) -> Command[Literal["compile", "compare"]]:
+        """Show the scenario's results, then run the renovation scenario if it is still due."""
+        done = state.renovation_kpis if state.scenario == "renovation" else state.kpis
+        _emit("kpis", kpis=done, scenario=state.scenario)
+        renovation_due = (
+            state.scenario == "baseline"
+            and state.renovation_kpis is None
+            and renovation_brief(state.brief, state.provenance, state.renovation_facts) is not None
+        )
+        return Command(goto="compile" if renovation_due else "compare")
+
+    async def compare(state: WorkflowState) -> Update:
+        if state.kpis is None or state.renovation_kpis is None:
+            return {"comparison": None, "scenario": "baseline"}
+        comparison = compare_scenarios(state.kpis, state.renovation_kpis)
+        _emit("comparison", comparison=comparison)
+        return {"comparison": comparison, "scenario": "baseline"}
 
     async def interpret(state: WorkflowState) -> Update:
         assert state.kpis is not None and state.compiled is not None
         filled, provenance = apply_defaults(state.brief, state.provenance)
+        overlay = renovation_brief(state.brief, state.provenance, state.renovation_facts)
+        renovated = apply_defaults(*overlay)[0] if overlay and state.renovation_kpis is not None else None
+        references = retrieve(filled, renovated=False)
+        if renovated is not None:
+            references += [r for r in retrieve(renovated, renovated=True) if r not in references]
         dynamic = interpret_input(
             kpis=state.kpis,
             brief=filled,
             provenance=provenance,
             assumptions=state.compiled.assumptions,
             language=state.language,
+            renovation_kpis=state.renovation_kpis if renovated is not None else None,
+            renovation_changes=renovation_changes(filled, renovated) if renovated is not None else (),
+            comparison=state.comparison,
+            references=[reference.line() for reference in references],
         )
-        brief_values = {**filled.model_dump(mode="json"), "assumptions": state.compiled.assumptions}
+        brief_values: dict[str, Any] = {
+            **filled.model_dump(mode="json"),
+            "assumptions": state.compiled.assumptions,
+            "renovation": state.renovation_kpis,
+            "comparison": state.comparison,
+            "references": [reference.model_dump(mode="json") for reference in references],
+        }
         report = GuardrailReport(passed_first_time=False)
         text = ""
         for attempt in (1, 2):
@@ -304,6 +422,7 @@ def build_graph(
             if result.passed:
                 text = streamed.text
                 report.passed_first_time = attempt == 1
+                GUARDRAIL.labels("passed" if attempt == 1 else "retried").inc()
                 break
             if attempt == 1:
                 report.wrong_first = result.wrong
@@ -311,7 +430,8 @@ def build_graph(
             else:
                 report.wrong_retry = result.wrong
                 report.fallback_used = True
-                text = fallback_text(state.kpis)
+                GUARDRAIL.labels("fallback").inc()
+                text = fallback_text(state.kpis, state.renovation_kpis, state.comparison)
                 _emit("guardrail", action="fallback", wrong=result.wrong, text=text)
                 log.warning("guardrail fallback session=%s wrong=%r", state.session_id, result.wrong)
                 message_id = await recorder.message(state.session_id, "assistant", text)
@@ -338,10 +458,11 @@ def build_graph(
     graph.add_node("plan", plan)
     graph.add_node("respond", respond)
     graph.add_node("confirm", confirm, destinations=("compile", "ingest", "merge"))
-    graph.add_node("compile", compile_, destinations=("check", "explain_error"))
+    graph.add_node("compile", compile_, destinations=("check", "explain_error", "compare"))
     graph.add_node("check", check, destinations=("simulate", "explain_error"))
     graph.add_node("simulate", simulate, destinations=("kpis", "explain_error"))
-    graph.add_node("kpis", kpis, destinations=("interpret", "explain_error"))
+    graph.add_node("kpis", kpis, destinations=("compile", "compare"))
+    graph.add_node("compare", compare)
     graph.add_node("interpret", interpret)
     graph.add_node("explain_error", explain_error)
     graph.add_edge(START, "ingest")
@@ -350,6 +471,7 @@ def build_graph(
     graph.add_edge("merge", "plan")
     graph.add_edge("plan", "respond")
     graph.add_conditional_edges("respond", after_respond, {"confirm": "confirm", END: END})
+    graph.add_edge("compare", "interpret")
     graph.add_edge("interpret", END)
     graph.add_edge("explain_error", END)
     return graph.compile(checkpointer=checkpointer)
@@ -374,7 +496,7 @@ def mermaid() -> str:
 WORKFLOW_DOC = Path(__file__).parents[3] / "docs" / "workflow.md"
 DOC_HEADER = """# Workflow
 
-The phase 1 LangGraph graph (`llmtrano.workflow.graph`), exported with `graph.get_graph().draw_mermaid()`.
+The LangGraph graph (`llmtrano.workflow.graph`), exported with `graph.get_graph().draw_mermaid()`.
 Regenerate after every change with `uv run python -m llmtrano.workflow.graph`; `tests/test_workflow.py` fails
 when this file is stale.
 

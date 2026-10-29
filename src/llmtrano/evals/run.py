@@ -3,6 +3,8 @@
     uv run python -m llmtrano.evals.run                       # default model, every case, with simulations
     uv run python -m llmtrano.evals.run --model qwen3.6-35b-a3b
     uv run python -m llmtrano.evals.run --only tutorial_house --no-simulate
+    uv run python -m llmtrano.evals.run --gate                 # exit 1 when evals/gate.yaml fails
+    uv run python -m llmtrano.evals.run --judge                # grade each explanation with the LLM judge
 
 Needs the stack (``docker compose --profile gpu up -d``). Each case gets its own session: the opening (and its
 follow-ups) is sent, then the scripted user answers the planner's questions by field until the Brief is ready
@@ -28,12 +30,14 @@ from typing import Any
 import yaml
 from langgraph.types import Command
 
-from llmtrano.brief.defaults import is_given
-from llmtrano.brief.model import Fact, HouseBrief, Provenance, Source
+from llmtrano.brief.defaults import apply_defaults, is_given
+from llmtrano.brief.model import Fact, HouseBrief, Provenance, Scenario, Source
 from llmtrano.compiler.compile import CompiledModel, trano_schema_hash
 from llmtrano.data import tutorial_house_yaml
 from llmtrano.evals.cases import MAX_TURNS, EvalCase, load_cases
-from llmtrano.evals.metrics import CaseResult, FieldCheck, markdown, matches, summarize
+from llmtrano.evals.gate import DEFAULT_GATE, check_gate, gate_markdown, load_gate
+from llmtrano.evals.judge import judge_input, run_judge
+from llmtrano.evals.metrics import CaseResult, FieldCheck, ReferenceCheck, markdown, matches, summarize
 from llmtrano.llm.calls import CallStats
 from llmtrano.logs import configure_logging
 from llmtrano.settings import Settings
@@ -73,8 +77,9 @@ class StatsRecorder:
         provenance: Provenance,
         schema_hash: str | None,
         confirmed: bool,
+        scenario: Scenario = "baseline",
     ) -> None:
-        await self.inner.brief(session_id, brief, provenance, schema_hash, confirmed)
+        await self.inner.brief(session_id, brief, provenance, schema_hash, confirmed, scenario)
 
 
 def next_message(case: EvalCase, state: WorkflowState, follow_ups: list[str]) -> str:
@@ -108,6 +113,33 @@ def check_renovation(case: EvalCase, state: WorkflowState) -> dict[str, FieldChe
     return checks
 
 
+def reference_checks(case: EvalCase, result: CaseResult) -> list[ReferenceCheck]:
+    """The gate check: the simulated heating need per m2 against the case's published reference."""
+    if case.reference is None:
+        return []
+    reference = case.reference
+    pairs = [("heating_kwh_per_m2", reference.heating_kwh_per_m2, result.kpis)]
+    if reference.renovation_heating_kwh_per_m2 is not None:
+        pairs.append(
+            ("renovation_heating_kwh_per_m2", reference.renovation_heating_kwh_per_m2, result.renovation_kpis)
+        )
+    checks = []
+    for metric, expected, kpis in pairs:
+        got = kpis.get("heating_energy_kwh_per_m2") if kpis else None
+        ok = got is not None and abs(got - expected) <= reference.tolerance * expected
+        checks.append(
+            ReferenceCheck(
+                metric=metric,
+                reference=expected,
+                got=got,
+                tolerance=reference.tolerance,
+                ok=ok,
+                source=reference.source,
+            )
+        )
+    return checks
+
+
 async def _state(graph: Any, config: dict[str, Any]) -> tuple[WorkflowState, bool]:
     snapshot = await graph.aget_state(config)
     return WorkflowState.model_validate(snapshot.values), bool(snapshot.interrupts)
@@ -121,6 +153,7 @@ async def run_case(
     model: str | None,
     simulate: bool,
     stats: StatsRecorder | None = None,
+    judge: tuple[Any, str] | None = None,  # (llm client, judge model) to grade the explanation
 ) -> CaseResult:
     """Drive one case through the graph and score it."""
     result = CaseResult(id=case.id, gate=case.gate, expected_outcome=case.outcome)
@@ -159,12 +192,21 @@ async def run_case(
             result.simulated = state.run_id is not None
             result.simulation_ok = state.phase is Phase.done if result.simulated else None
             result.kpis = state.kpis
+            result.renovation_kpis = state.renovation_kpis
+            result.comparison = state.comparison
+            if case.outcome == "compare":
+                result.renovation_simulated = (
+                    state.renovation_kpis is not None and state.comparison is not None
+                )
             result.explanation = state.explanation
             result.guardrail_first_time = state.guardrail.passed_first_time if state.guardrail else None
             result.errors = list(state.errors) if state.phase is Phase.failed else []
             result.outcome = "simulated" if state.phase is Phase.done else "failed"
+            result.reference_checks = reference_checks(case, result)
             if state.explanation:
                 result.transcript.append({"role": "assistant", "content": state.explanation})
+            if judge is not None and state.explanation and state.kpis is not None:
+                result.judge = await _judge(judge, state)
     except Exception as error:  # an eval run reports a broken case and goes on
         log.exception("case error case=%s", case.id)
         result.outcome = "error"
@@ -172,6 +214,22 @@ async def run_case(
     if stats is not None:
         result.ttft_ms = [s.ttft_ms for s in stats.stats[session_id] if s.call == "respond" and s.ttft_ms]
     return result
+
+
+async def _judge(judge: tuple[Any, str], state: WorkflowState) -> dict[str, Any] | None:
+    llm, model = judge
+    filled, provenance = apply_defaults(state.brief, state.provenance)
+    dynamic = judge_input(
+        explanation=state.explanation or "",
+        kpis=state.kpis or {},
+        brief=filled,
+        provenance=provenance,
+        renovation_kpis=state.renovation_kpis,
+        comparison=state.comparison,
+        language=state.language,
+    )
+    score, _ = await run_judge(llm, dynamic, model=model)
+    return score.model_dump() if score else None
 
 
 async def simulate_tutorial(jobs: Jobs, session_id: str) -> dict[str, Any] | None:
@@ -209,6 +267,14 @@ async def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--output", type=Path, default=Path("evals/results"))
     parser.add_argument("--only", nargs="*", help="case ids to run")
     parser.add_argument("--no-simulate", action="store_true", help="stop at the confirmation")
+    parser.add_argument("--judge", action="store_true", help="grade each explanation with the LLM judge")
+    parser.add_argument(
+        "--gate",
+        nargs="?",
+        const=DEFAULT_GATE,
+        type=Path,
+        help="check the summary against the gate thresholds (default evals/gate.yaml); exit 1 when it fails",
+    )
     args = parser.parse_args(argv)
     configure_logging()
     settings = Settings()
@@ -234,11 +300,17 @@ async def main(argv: list[str] | None = None) -> int:
                     session_id = str(row.id)
                 log.info("case start case=%s session=%s", case.id, session_id)
                 result = await run_case(
-                    case, graph, session_id, model=model, simulate=not args.no_simulate, stats=recorder
+                    case,
+                    graph,
+                    session_id,
+                    model=model,
+                    simulate=not args.no_simulate,
+                    stats=recorder,
+                    judge=(llm, settings.llm_interpret_model) if args.judge else None,
                 )
                 log.info("case end case=%s outcome=%s", case.id, result.outcome)
                 results.append(result)
-                if case.gate and not args.no_simulate:
+                if case.id == "tutorial_house" and not args.no_simulate:
                     reference = await simulate_tutorial(jobs, session_id)
     finally:
         await redis.aclose()
@@ -252,7 +324,7 @@ async def main(argv: list[str] | None = None) -> int:
         "interpretation model": settings.llm_interpret_model,
         "cases": str(len(results)),
     }
-    gate = next((r for r in results if r.gate), None)
+    gate = next((r for r in results if r.id == "tutorial_house"), None)
     comparison = gate_comparison(gate, reference)
     args.output.mkdir(parents=True, exist_ok=True)
     name = f"{stamp}-{model}"
@@ -268,9 +340,14 @@ async def main(argv: list[str] | None = None) -> int:
         text += "\n## Gate: tutorial house through the chat vs first_model.yaml\n\n" + "\n".join(
             f"- {key}: {value}" for key, value in comparison.items()
         )
+    status = 0
+    if args.gate is not None:
+        gate_result = check_gate(summary, load_gate(args.gate))
+        text += "\n" + gate_markdown(gate_result)
+        status = 0 if gate_result.passed else 1
     (args.output / f"{name}.md").write_text(text)
     sys.stdout.write(text)
-    return 0
+    return status
 
 
 def gate_comparison(gate: CaseResult | None, reference: dict[str, Any] | None) -> dict[str, Any] | None:

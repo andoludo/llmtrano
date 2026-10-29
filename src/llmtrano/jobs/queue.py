@@ -18,6 +18,7 @@ from redis.asyncio import Redis
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
+from llmtrano.brief.model import Scenario
 from llmtrano.compiler.compile import CompiledModel
 from llmtrano.db.models import KpiRow, Run, RunKind, RunStatus
 from llmtrano.jobs.progress import TERMINAL_PHASES, channel
@@ -48,11 +49,14 @@ class WorkerJobs:
     def __init__(self, redis: ArqRedis, sessions: sessionmaker[Session], settings: Settings) -> None:
         self.redis, self.sessions, self.settings = redis, sessions, settings
 
-    def _insert(self, session_id: str, compiled: CompiledModel, kind: RunKind) -> uuid.UUID:
+    def _insert(
+        self, session_id: str, compiled: CompiledModel, kind: RunKind, scenario: Scenario
+    ) -> uuid.UUID:
         with self.sessions() as session:
             run = Run(
                 session_id=uuid.UUID(session_id),
                 kind=kind,
+                scenario=scenario,
                 library=self.settings.simulation_library,
                 start_s=0.0,
                 end_s=YEAR_S,
@@ -77,8 +81,10 @@ class WorkerJobs:
         except Exception as error:  # the job failed or timed out; the row says why
             log.warning("job ended with an error run_id=%s error=%r", run_id, error)
 
-    async def check_model(self, session_id: str, compiled: CompiledModel) -> CheckOutcome:
-        run_id = await asyncio.to_thread(self._insert, session_id, compiled, RunKind.CHECK)
+    async def check_model(
+        self, session_id: str, compiled: CompiledModel, scenario: Scenario = "baseline"
+    ) -> CheckOutcome:
+        run_id = await asyncio.to_thread(self._insert, session_id, compiled, RunKind.CHECK, scenario)
         await self._wait(await enqueue_check(self.redis, run_id), run_id)
         run, _ = await asyncio.to_thread(self._load, run_id)
         return CheckOutcome(
@@ -89,9 +95,13 @@ class WorkerJobs:
         )
 
     async def simulate(
-        self, session_id: str, compiled: CompiledModel, on_phase: PhaseCallback
+        self,
+        session_id: str,
+        compiled: CompiledModel,
+        on_phase: PhaseCallback,
+        scenario: Scenario = "baseline",
     ) -> SimulationOutcome:
-        run_id = await asyncio.to_thread(self._insert, session_id, compiled, RunKind.SIMULATE)
+        run_id = await asyncio.to_thread(self._insert, session_id, compiled, RunKind.SIMULATE, scenario)
         relay = asyncio.create_task(relay_progress(self.settings.valkey_url, run_id, on_phase))
         await asyncio.sleep(0)  # subscribe before the job can start
         try:
