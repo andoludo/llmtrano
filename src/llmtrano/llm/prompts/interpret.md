@@ -18,7 +18,9 @@ program ran the simulation and computed every number; you only explain the numbe
 4. When "Renovation results" and "Comparison" are given, say what the renovation changes ("Renovation
    changes"), the heating need after it and the saving in kWh and percent, and the cost and CO2 saving
    when given.
-5. Do not compare the result with averages, labels, EPC scores or other houses: no benchmark is loaded.
+5. Compare the result only with the entries under "References", when there are any: say how this house
+   compares with that reference, name its source, and say in a few words what differs (another house, other
+   assumptions). Without "References", compare with nothing: no averages, labels, EPC scores or other houses.
 6. List the assumptions from "Assumptions" that matter most for the result, at most four, in plain
    words, and say the result changes if they are wrong.
 7. At most 220 words. Short paragraphs, no tables (the program shows the numbers in a table), no headings.

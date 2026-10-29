@@ -349,3 +349,25 @@ async def test_baseline_change_after_a_result_reruns_both(harness: Harness) -> N
     await harness.say("By the way the walls are not insulated.")
     result = await harness.resume({"approved": True})
     assert len(harness.jobs.simulated) == 4 and result["comparison"] is not None
+
+
+async def test_interpretation_gets_references_and_may_quote_them(harness: Harness) -> None:
+    harness.llm.queue(
+        "extract",
+        facts(
+            ("building_type", "semi_detached", "baseline"),
+            ("construction_period", "1965", "baseline"),
+            ("heated_floor_area_m2", "110 m2", "baseline"),
+            ("storeys", "2", "baseline"),
+            complete=True,
+        ),
+    )
+    harness.llm.queue("respond", "Please confirm.")
+    harness.llm.queue(
+        "interpret", "It needs 6469 kWh, 53.9 kWh/m2, less than trano's reference house at 130 kWh/m2."
+    )
+    await harness.say("Semi-detached from 1965, 110 m2, two floors, that's all.")
+    result = await harness.resume({"approved": True})
+    request = harness.llm.calls("interpret")[0]["messages"][-1]["content"]
+    assert "References (published results" in request and "130 kWh/m2" in request
+    assert result["guardrail"].passed_first_time  # 130 is a known value: it comes from the references

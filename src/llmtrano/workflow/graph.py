@@ -36,6 +36,7 @@ from llmtrano.brief.parse import ParseError, parse_value
 from llmtrano.brief.plan import Option, Question, next_questions, ready_to_confirm
 from llmtrano.compiler.compile import BriefNotReadyError, CompiledModel, compile_brief
 from llmtrano.guardrails.numbers import GuardrailResult, check_numbers, fallback_text, retry_note
+from llmtrano.knowledge import retrieve
 from llmtrano.kpi.compare import compare as compare_scenarios
 from llmtrano.kpi.energy import enrich
 from llmtrano.llm import calls
@@ -378,6 +379,9 @@ def build_graph(
         filled, provenance = apply_defaults(state.brief, state.provenance)
         overlay = renovation_brief(state.brief, state.provenance, state.renovation_facts)
         renovated = apply_defaults(*overlay)[0] if overlay and state.renovation_kpis is not None else None
+        references = retrieve(filled, renovated=False)
+        if renovated is not None:
+            references += [r for r in retrieve(renovated, renovated=True) if r not in references]
         dynamic = interpret_input(
             kpis=state.kpis,
             brief=filled,
@@ -387,12 +391,14 @@ def build_graph(
             renovation_kpis=state.renovation_kpis if renovated is not None else None,
             renovation_changes=renovation_changes(filled, renovated) if renovated is not None else (),
             comparison=state.comparison,
+            references=[reference.line() for reference in references],
         )
         brief_values: dict[str, Any] = {
             **filled.model_dump(mode="json"),
             "assumptions": state.compiled.assumptions,
             "renovation": state.renovation_kpis,
             "comparison": state.comparison,
+            "references": [reference.model_dump(mode="json") for reference in references],
         }
         report = GuardrailReport(passed_first_time=False)
         text = ""

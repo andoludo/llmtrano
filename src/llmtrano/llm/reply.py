@@ -176,6 +176,7 @@ def interpret_input(
     renovation_kpis: Mapping[str, Any] | None = None,
     renovation_changes: Sequence[tuple[str, str | None, str]] = (),
     comparison: Mapping[str, Any] | None = None,
+    references: Sequence[str] = (),  # published results to compare with, one line each (phase 3)
 ) -> str:
     lines = [
         f"Language: {language}",
@@ -197,10 +198,9 @@ def interpret_input(
             "Comparison (saving = before minus after):",
             json.dumps(_rounded(comparison), ensure_ascii=False),
         ]
-    lines += [
-        "House:",
-        *brief_lines(brief, provenance),
-        "Assumptions:",
-        *(f"- {line}" for line in assumptions),
-    ]
+    lines += ["House:", *brief_lines(brief, provenance)]
+    if references:
+        lines += ["References (published results for houses like this one, with their source):"]
+        lines += [f"- {line}" for line in references]
+    lines += ["Assumptions:", *(f"- {line}" for line in assumptions)]
     return "\n".join(lines)
