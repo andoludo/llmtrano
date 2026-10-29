@@ -1,0 +1,71 @@
+{
+  "title": "llmtrano",
+  "uid": "llmtrano",
+  "schemaVersion": 39,
+  "time": {"from": "now-6h", "to": "now"},
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "LLM call latency p95 by call [s]",
+      "gridPos": {"x": 0, "y": 0, "w": 12, "h": 8},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, call) (rate(llmtrano_llm_call_seconds_bucket[5m])))",
+          "legendFormat": "{{call}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Time to first token p50 by model [s]",
+      "gridPos": {"x": 12, "y": 0, "w": 12, "h": 8},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.5, sum by (le, model) (rate(llmtrano_llm_ttft_seconds_bucket[5m])))",
+          "legendFormat": "{{model}}"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Guardrail outcomes (6 h)",
+      "gridPos": {"x": 0, "y": 8, "w": 8, "h": 6},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"expr": "sum by (outcome) (increase(llmtrano_guardrail_total[6h]))", "legendFormat": "{{outcome}}"}
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Runs by status (6 h)",
+      "gridPos": {"x": 8, "y": 8, "w": 8, "h": 6},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"expr": "sum by (kind, status) (increase(llmtrano_runs_total[6h]))", "legendFormat": "{{kind}} {{status}}"}
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Tokens per hour",
+      "gridPos": {"x": 16, "y": 8, "w": 8, "h": 6},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"expr": "sum by (direction) (rate(llmtrano_llm_tokens_total[1h])) * 3600", "legendFormat": "{{direction}}"}
+      ]
+    },
+    {
+      "type": "table",
+      "title": "Last simulations (Postgres)",
+      "gridPos": {"x": 0, "y": 14, "w": 24, "h": 9},
+      "datasource": {"type": "grafana-postgresql-datasource", "uid": "postgres"},
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT r.created_at, r.kind, r.scenario, r.status, r.duration_s, r.error_kind, (k.values->>'heating_energy_kwh')::float AS heating_kwh FROM runs r LEFT JOIN kpis k ON k.run_id = r.id ORDER BY r.created_at DESC LIMIT 50"
+        }
+      ]
+    }
+  ]
+}

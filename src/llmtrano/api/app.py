@@ -37,6 +37,7 @@ from llmtrano.jobs.progress import TERMINAL_PHASES, channel
 from llmtrano.jobs.queue import SIMULATION_JOB, WorkerJobs
 from llmtrano.llm.client import make_llm_client
 from llmtrano.logs import configure_logging
+from llmtrano.metrics import exposition
 from llmtrano.settings import Settings
 from llmtrano.workflow.checkpoint import postgres_checkpointer
 from llmtrano.workflow.deps import Deps
@@ -147,6 +148,7 @@ def create_app(services: Services | None = None) -> FastAPI:
 
     app = FastAPI(title="llmtrano", version="0.1.0", lifespan=lifespan)
     app.add_api_route("/health", health, methods=["GET"], response_model=Health)
+    app.add_api_route("/metrics", prometheus_metrics, methods=["GET"], include_in_schema=False)
     app.add_api_route("/models", models, methods=["GET"])
     app.add_api_route("/runs", create_run, methods=["POST"], status_code=status.HTTP_201_CREATED)
     app.add_api_route("/runs/{run_id}", get_run, methods=["GET"])
@@ -195,6 +197,13 @@ async def health(request: Request, response: Response) -> Health:
     else:
         overall = "ok" if llm == "ok" else "degraded"
     return Health(status=overall, db=db, queue=queue, llm=llm)
+
+
+async def prometheus_metrics() -> Response:
+    """The api's Prometheus metrics (LLM calls, guardrail, turns, runs), scraped by the observability
+    profile."""
+    body, content_type = exposition()
+    return Response(content=body, media_type=content_type)
 
 
 async def models(request: Request) -> list[str]:

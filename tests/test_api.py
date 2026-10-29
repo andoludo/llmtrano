@@ -350,3 +350,16 @@ def test_confirm_with_renovation_plans_runs_both_scenarios(harness: Harness) -> 
         assert [r.scenario for r in runs] == []  # fake jobs: no rows; the recorder wrote the Briefs
         briefs = session.scalars(select(HouseBriefRow).order_by(HouseBriefRow.version)).all()
         assert [b.scenario for b in briefs] == ["baseline", "renovation"]
+
+
+def test_metrics_endpoint_counts_turns_and_llm_calls(harness: Harness) -> None:
+    session_id = harness.session()
+    harness.llm.queue("extract", facts(("building_type", "terraced", "baseline")))
+    harness.llm.queue("respond", "Thanks.")
+    harness.stream(f"/sessions/{session_id}/messages", {"message": "A terraced house."})
+    response = harness.client.get("/metrics")
+    assert response.status_code == 200 and response.headers["content-type"].startswith("text/plain")
+    body = response.text
+    assert "llmtrano_turns_total" in body
+    assert 'llmtrano_llm_call_seconds_count{call="extract",model="qwen3.5-9b"}' in body
+    assert "/metrics" not in harness.client.get("/openapi.json").json()["paths"]

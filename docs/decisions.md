@@ -309,3 +309,23 @@ collecting the ones that still need him at the end (`docs/phase-3-review.md`). T
   `conExt[i].opa_b.Q_flow`, `conExtWin[i].glaUns_b.Q_flow`, `conBou[i].opa_b.Q_flow`; checked in trano's stored
   `three_zones_hydronic_heating.building_res.mat`).
 - **Energy prices and CO2 factors** are settings with documented defaults (step 2.6); the values need Ando's check.
+
+## 2026-10-29 Phase 3 build decisions (steps 3.1 to 3.7)
+
+- **Generated eval cases are committed files**: `llmtrano.evals.generate` is deterministic and its phrases are
+  checked against the parsers, but the files under `evals/cases/gen_*.yaml` are the golden set (reviewed once,
+  a test fails when they are stale), so a change to the generator is a visible diff.
+- **The gate fails on a metric it cannot measure** (None): a gate that cannot be checked is not passed.
+- **The judge is a signal, not the gate**: it runs only with `--judge`, with the interpretation model, thinking
+  on, near-greedy; the number guardrail stays the hard check. Its scores are compared between runs, not
+  thresholded, until Ando has calibrated them against his own reading of a few transcripts.
+- **References are a lookup, not a vector search**: a small YAML with a source per number; retrieval by building
+  type, period and scenario, so the explanation can say where a comparison comes from. Entries without a
+  document a reader can open are not accepted.
+- **Dependency**: `prometheus-client>=0.26.0,<1` (0.26.0 released 2026-07-24; the official client, no
+  surprises). No OpenTelemetry: tracing is deferred.
+- **Observability images**: `prom/prometheus:v3.5.0` and `grafana/grafana:12.1.0` are pinned by tag only;
+  the digests could not be resolved from the sandbox. Pin them by digest on the laptop like the other images
+  (`docker compose --profile observability pull`, then `docker image inspect --format '{{index .RepoDigests 0}}'`).
+- **Metrics live in the api process**: the worker has no HTTP server; the runs it executes are counted when
+  the api receives their outcome, and the `runs` table is the source of truth for the Grafana table panel.

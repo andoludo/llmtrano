@@ -42,6 +42,8 @@ from llmtrano.kpi.energy import enrich
 from llmtrano.llm import calls
 from llmtrano.llm.extraction import extraction_input, run_extraction
 from llmtrano.llm.reply import detect_language, interpret_input, respond_input
+from llmtrano.logs import bind_context
+from llmtrano.metrics import GUARDRAIL, TURNS, timed_run
 from llmtrano.workflow.deps import Deps
 from llmtrano.workflow.state import (
     RECENT_MESSAGES,
@@ -127,6 +129,8 @@ def build_graph(
     # ---------- intake turn
 
     async def ingest(state: WorkflowState) -> Update:
+        bind_context(session_id=state.session_id)
+        TURNS.inc()
         text = state.message or (state.answer.label if state.answer else "")
         await recorder.message(state.session_id, "user", text)
         language = detect_language(state.message, state.language) if state.message else state.language
@@ -328,7 +332,9 @@ def build_graph(
 
     async def check(state: WorkflowState) -> Command[Literal["simulate", "explain_error"]]:
         _emit("run_phase", phase="checking", kind="check", scenario=state.scenario)
-        outcome = await deps.jobs.check_model(state.session_id, current(state), scenario=state.scenario)
+        with timed_run("check", state.scenario) as status:
+            outcome = await deps.jobs.check_model(state.session_id, current(state), scenario=state.scenario)
+            status.append("succeeded" if outcome.ok else "failed")
         if not outcome.ok:
             errors = outcome.errors or [f"the model check failed ({outcome.error_kind})"]
             return Command(goto="explain_error", update={"check_run_id": outcome.run_id, "errors": errors})
@@ -340,7 +346,9 @@ def build_graph(
         async def on_phase(phase: str) -> None:
             _emit("run_phase", phase=phase, kind="simulate", scenario=scenario)
 
-        outcome = await deps.jobs.simulate(state.session_id, current(state), on_phase, scenario=scenario)
+        with timed_run("simulate", scenario) as status:
+            outcome = await deps.jobs.simulate(state.session_id, current(state), on_phase, scenario=scenario)
+            status.append("succeeded" if outcome.ok else "failed")
         run_key = "renovation_run_id" if scenario == "renovation" else "run_id"
         if not outcome.ok:
             reason = (
@@ -414,6 +422,7 @@ def build_graph(
             if result.passed:
                 text = streamed.text
                 report.passed_first_time = attempt == 1
+                GUARDRAIL.labels("passed" if attempt == 1 else "retried").inc()
                 break
             if attempt == 1:
                 report.wrong_first = result.wrong
@@ -421,6 +430,7 @@ def build_graph(
             else:
                 report.wrong_retry = result.wrong
                 report.fallback_used = True
+                GUARDRAIL.labels("fallback").inc()
                 text = fallback_text(state.kpis, state.renovation_kpis, state.comparison)
                 _emit("guardrail", action="fallback", wrong=result.wrong, text=text)
                 log.warning("guardrail fallback session=%s wrong=%r", state.session_id, result.wrong)

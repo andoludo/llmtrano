@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     simulation_library: str = "Buildings"
     simulation_timeout_s: int = 1200
     api_url: str = "http://localhost:8000"  # used by the ui; the ui talks only to the api
+    log_format: str = "text"  # or "json": one JSON object per line with the session and run ids (phase 3)
     # Energy prices [EUR/kWh] and emission factors [kg CO2/kWh] for the cost and CO2 KPIs (phase 2). The
     # defaults are orders of magnitude for a Belgian household in 2025; Ando checks them (docs/decisions.md).
     energy_price_gas_eur_per_kwh: float = 0.10

@@ -16,6 +16,7 @@ from openai.types.chat import ChatCompletionMessageParam
 
 from llmtrano.llm.client import NO_THINKING
 from llmtrano.llm.prompts import Prompt, PromptName, load_prompt
+from llmtrano.metrics import observe_llm_call
 
 log = logging.getLogger(__name__)
 
@@ -138,6 +139,14 @@ def _stream(
                     yield choice.delta.content
         finally:
             stats.latency_ms = (time.perf_counter() - started) * 1000
+            observe_llm_call(
+                stats.call,
+                stats.model,
+                latency_ms=stats.latency_ms,
+                ttft_ms=stats.ttft_ms,
+                tokens_in=stats.tokens_in,
+                tokens_out=stats.tokens_out,
+            )
             log.info(
                 "llm call=%s model=%s prompt_version=%s tokens_in=%s tokens_out=%s ttft_ms=%s "
                 "latency_ms=%.0f reasoning_chars=%d finish=%s",

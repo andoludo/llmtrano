@@ -31,7 +31,7 @@ from llmtrano.db.models import KpiRow, Run, RunStatus
 from llmtrano.db.session import make_sessionmaker
 from llmtrano.jobs.progress import Publisher, channel, progress_message
 from llmtrano.kpi.compute import house_kpis
-from llmtrano.logs import configure_logging
+from llmtrano.logs import bind_context, configure_logging
 from llmtrano.settings import Settings
 from llmtrano.trano_info import trano_version
 
@@ -201,12 +201,14 @@ def execute_run(
 
 
 async def run_simulation(ctx: dict[str, Any], run_id: str) -> str:
+    bind_context(run_id=run_id)
     args = (uuid.UUID(run_id), ctx["sessions"], ctx["settings"], ctx["publisher"])
     status = await asyncio.to_thread(execute_run, *args)
     return status.value
 
 
 async def check_model(ctx: dict[str, Any], run_id: str) -> str:
+    bind_context(run_id=run_id)
     status = await asyncio.to_thread(execute_check, uuid.UUID(run_id), ctx["sessions"], ctx["settings"])
     return status.value
 
