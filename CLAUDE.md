@@ -62,13 +62,15 @@ uv sync                                  # install
 uv run pytest -m "not llm and not simulation and not compose"   # fast tests
 docker compose --profile gpu up -d       # full local stack
 uv run python -m llmtrano.bench         # latency and RAM benchmark (phase 0)
-uv run python -m llmtrano.evals.run     # eval set (phase 1)
+uv run python -m llmtrano.evals.run --gate --judge   # eval set with the gate and the LLM judge (phase 3)
+uv run python -m llmtrano.evals.compare a.json b.json  # A/B of two eval runs
 ```
 
 ## Where things are
 
 ```
-compose.yaml              all services; core services have no profile, llm + model-fetch use profile gpu
+compose.yaml              all services; core services have no profile, llm + model-fetch use profile gpu,
+                          prometheus + grafana use profile observability
 config/llama-swap.yaml    model definitions for the llm service
 docker/worker.Dockerfile  OpenModelica + trano + llmtrano
 docker/app.Dockerfile     api and ui
