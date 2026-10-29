@@ -11,6 +11,7 @@
 | Latency | median and p95 TTFT and turn time |
 | Renovation simulated (phase 2) | compare cases with both scenarios and a comparison / compare cases |
 | Reference checks (phase 2) | gate cases within the tolerance of their published reference / gate cases |
+| Judge (phase 3, ``--judge``) | explanations the LLM judge finds faithful; mean clarity and actionability |
 """
 
 import math
@@ -59,6 +60,7 @@ class CaseResult(BaseModel):
     comparison: dict[str, Any] | None = None
     renovation_simulated: bool | None = None  # compare cases: both scenarios ran and were compared
     reference_checks: list[ReferenceCheck] = Field(default_factory=list)
+    judge: dict[str, Any] | None = None  # the LLM judge's score of the explanation (``--judge``)
     errors: list[str] = Field(default_factory=list)
     ttft_ms: list[float] = Field(default_factory=list)  # the interactive replies
     turn_s: list[float] = Field(default_factory=list)
@@ -113,6 +115,9 @@ class Summary(BaseModel):
     unsupported_handled: float | None
     renovation_success: float | None
     reference_checks_ok: float | None
+    judge_faithful: float | None
+    judge_clear_mean: float | None
+    judge_actionable_mean: float | None
     ttft_ms_median: float | None
     ttft_ms_p95: float | None
     turn_s_median: float | None
@@ -129,6 +134,7 @@ def summarize(results: Sequence[CaseResult]) -> Summary:
     unsupported = [r for r in results if r.expected_outcome == "unsupported"]
     compared = [r for r in results if r.expected_outcome == "compare"]
     references = [check for r in results for check in r.reference_checks]
+    judged = [r.judge for r in results if r.judge is not None]
     ttft = [value for r in results for value in r.ttft_ms]
     turn_s = [value for r in results for value in r.turn_s]
     return Summary(
@@ -148,6 +154,9 @@ def summarize(results: Sequence[CaseResult]) -> Summary:
         unsupported_handled=_ratio(sum(r.outcome == "unsupported" for r in unsupported), len(unsupported)),
         renovation_success=_ratio(sum(bool(r.renovation_simulated) for r in compared), len(compared)),
         reference_checks_ok=_ratio(sum(c.ok for c in references), len(references)),
+        judge_faithful=_ratio(sum(bool(j["faithful"]) for j in judged), len(judged)),
+        judge_clear_mean=statistics.mean(float(j["clear"]) for j in judged) if judged else None,
+        judge_actionable_mean=statistics.mean(float(j["actionable"]) for j in judged) if judged else None,
         ttft_ms_median=statistics.median(ttft) if ttft else None,
         ttft_ms_p95=percentile(ttft, 95),
         turn_s_median=statistics.median(turn_s) if turn_s else None,
@@ -181,6 +190,9 @@ def markdown(summary: Summary, results: Sequence[CaseResult], header: dict[str, 
         f"| Unsupported handled (apartments) | {_pct(summary.unsupported_handled)} |",
         f"| Renovation simulated (compare cases) | {_pct(summary.renovation_success)} |",
         f"| Reference checks (gate cases) | {_pct(summary.reference_checks_ok)} |",
+        f"| Judge: faithful | {_pct(summary.judge_faithful)} |",
+        f"| Judge: clarity, actionability (1 to 5) | {_num(summary.judge_clear_mean)}, "
+        f"{_num(summary.judge_actionable_mean)} |",
         f"| TTFT (reply) | median {_num(summary.ttft_ms_median, 0)} ms, "
         f"p95 {_num(summary.ttft_ms_p95, 0)} ms |",
         f"| Turn time | median {_num(summary.turn_s_median)} s, p95 {_num(summary.turn_s_p95)} s |",
@@ -225,6 +237,14 @@ def markdown(summary: Summary, results: Sequence[CaseResult], header: dict[str, 
     ]
     if wrong:
         lines += ["", "## Wrong or missing fields", "", *wrong]
+    judged_issues = [
+        f"- {r.id} ({'faithful' if r.judge['faithful'] else 'NOT faithful'}, clear {r.judge['clear']}, "
+        f"actionable {r.judge['actionable']}): {'; '.join(r.judge['issues']) or 'no issues'}"
+        for r in results
+        if r.judge is not None and (not r.judge["faithful"] or r.judge["issues"])
+    ]
+    if judged_issues:
+        lines += ["", "## Judge", "", *judged_issues]
     failures = [f"- {r.id}: {r.outcome}; {'; '.join(r.errors)}" for r in results if r.errors]
     if failures:
         lines += ["", "## Errors", "", *failures]

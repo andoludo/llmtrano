@@ -4,6 +4,7 @@
     uv run python -m llmtrano.evals.run --model qwen3.6-35b-a3b
     uv run python -m llmtrano.evals.run --only tutorial_house --no-simulate
     uv run python -m llmtrano.evals.run --gate                 # exit 1 when evals/gate.yaml fails
+    uv run python -m llmtrano.evals.run --judge                # grade each explanation with the LLM judge
 
 Needs the stack (``docker compose --profile gpu up -d``). Each case gets its own session: the opening (and its
 follow-ups) is sent, then the scripted user answers the planner's questions by field until the Brief is ready
@@ -29,12 +30,13 @@ from typing import Any
 import yaml
 from langgraph.types import Command
 
-from llmtrano.brief.defaults import is_given
+from llmtrano.brief.defaults import apply_defaults, is_given
 from llmtrano.brief.model import Fact, HouseBrief, Provenance, Scenario, Source
 from llmtrano.compiler.compile import CompiledModel, trano_schema_hash
 from llmtrano.data import tutorial_house_yaml
 from llmtrano.evals.cases import MAX_TURNS, EvalCase, load_cases
 from llmtrano.evals.gate import DEFAULT_GATE, check_gate, gate_markdown, load_gate
+from llmtrano.evals.judge import judge_input, run_judge
 from llmtrano.evals.metrics import CaseResult, FieldCheck, ReferenceCheck, markdown, matches, summarize
 from llmtrano.llm.calls import CallStats
 from llmtrano.logs import configure_logging
@@ -151,6 +153,7 @@ async def run_case(
     model: str | None,
     simulate: bool,
     stats: StatsRecorder | None = None,
+    judge: tuple[Any, str] | None = None,  # (llm client, judge model) to grade the explanation
 ) -> CaseResult:
     """Drive one case through the graph and score it."""
     result = CaseResult(id=case.id, gate=case.gate, expected_outcome=case.outcome)
@@ -202,6 +205,8 @@ async def run_case(
             result.reference_checks = reference_checks(case, result)
             if state.explanation:
                 result.transcript.append({"role": "assistant", "content": state.explanation})
+            if judge is not None and state.explanation and state.kpis is not None:
+                result.judge = await _judge(judge, state)
     except Exception as error:  # an eval run reports a broken case and goes on
         log.exception("case error case=%s", case.id)
         result.outcome = "error"
@@ -209,6 +214,22 @@ async def run_case(
     if stats is not None:
         result.ttft_ms = [s.ttft_ms for s in stats.stats[session_id] if s.call == "respond" and s.ttft_ms]
     return result
+
+
+async def _judge(judge: tuple[Any, str], state: WorkflowState) -> dict[str, Any] | None:
+    llm, model = judge
+    filled, provenance = apply_defaults(state.brief, state.provenance)
+    dynamic = judge_input(
+        explanation=state.explanation or "",
+        kpis=state.kpis or {},
+        brief=filled,
+        provenance=provenance,
+        renovation_kpis=state.renovation_kpis,
+        comparison=state.comparison,
+        language=state.language,
+    )
+    score, _ = await run_judge(llm, dynamic, model=model)
+    return score.model_dump() if score else None
 
 
 async def simulate_tutorial(jobs: Jobs, session_id: str) -> dict[str, Any] | None:
@@ -246,6 +267,7 @@ async def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--output", type=Path, default=Path("evals/results"))
     parser.add_argument("--only", nargs="*", help="case ids to run")
     parser.add_argument("--no-simulate", action="store_true", help="stop at the confirmation")
+    parser.add_argument("--judge", action="store_true", help="grade each explanation with the LLM judge")
     parser.add_argument(
         "--gate",
         nargs="?",
@@ -278,7 +300,13 @@ async def main(argv: list[str] | None = None) -> int:
                     session_id = str(row.id)
                 log.info("case start case=%s session=%s", case.id, session_id)
                 result = await run_case(
-                    case, graph, session_id, model=model, simulate=not args.no_simulate, stats=recorder
+                    case,
+                    graph,
+                    session_id,
+                    model=model,
+                    simulate=not args.no_simulate,
+                    stats=recorder,
+                    judge=(llm, settings.llm_interpret_model) if args.judge else None,
                 )
                 log.info("case end case=%s outcome=%s", case.id, result.outcome)
                 results.append(result)

@@ -22,7 +22,7 @@ from openai.types.chat import ChatCompletionMessageParam
 
 from llmtrano.brief.model import HouseBrief
 
-PromptName = Literal["extract", "respond", "interpret"]
+PromptName = Literal["extract", "respond", "interpret", "judge"]
 FIELDS_SLOT = "{{fields}}"
 
 

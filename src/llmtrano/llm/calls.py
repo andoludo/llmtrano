@@ -1,4 +1,4 @@
-"""The three LLM calls of phase 1: ``extract``, ``respond`` and ``interpret``.
+"""The LLM calls: ``extract``, ``respond`` and ``interpret`` (phase 1) and ``judge`` (phase 3 evals).
 
 Each has its own sampling settings, ``max_tokens``, thinking flag and model id (from ``Settings``). Every
 call is streamed internally so time to first token is measured the same way for all three, and each logs one
@@ -55,6 +55,8 @@ RESPOND_SAMPLING = Sampling(
 )
 # Interpretation: thinking allowed, Qwen's recommended thinking sampling; the budget covers the reasoning.
 INTERPRET_SAMPLING = Sampling(temperature=0.6, max_tokens=4096, thinking=True, top_p=0.95, top_k=20)
+# Judge (evals): thinking allowed, near-greedy, a JSON answer of a few lines after the reasoning.
+JUDGE_SAMPLING = Sampling(temperature=0.1, max_tokens=2048, thinking=True)
 
 
 @dataclass(slots=True)
@@ -175,3 +177,15 @@ def interpret(llm: AsyncOpenAI, dynamic: str, *, model: str, retry_note: str | N
     if retry_note:
         dynamic = f"{dynamic}\n\n{retry_note}"
     return _stream(llm, load_prompt("interpret"), dynamic, model, INTERPRET_SAMPLING)
+
+
+async def judge(
+    llm: AsyncOpenAI, dynamic: str, *, model: str, response_schema: dict[str, Any]
+) -> tuple[str, CallStats]:
+    """The judge's JSON text, constrained by ``response_schema`` (evals only)."""
+    response_format = {
+        "type": "json_schema",
+        "json_schema": {"name": "judge", "strict": True, "schema": response_schema},
+    }
+    streamed = _stream(llm, load_prompt("judge"), dynamic, model, JUDGE_SAMPLING, response_format)
+    return await streamed.collect(), streamed.stats

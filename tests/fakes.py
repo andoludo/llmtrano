@@ -7,7 +7,7 @@ from typing import Any
 
 from llmtrano.llm.prompts import PromptName, load_prompt
 
-PROMPTS: tuple[PromptName, ...] = ("extract", "respond", "interpret")
+PROMPTS: tuple[PromptName, ...] = ("extract", "respond", "interpret", "judge")
 
 
 def chunk(
