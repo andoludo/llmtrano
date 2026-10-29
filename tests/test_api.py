@@ -363,3 +363,69 @@ def test_metrics_endpoint_counts_turns_and_llm_calls(harness: Harness) -> None:
     assert "llmtrano_turns_total" in body
     assert 'llmtrano_llm_call_seconds_count{call="extract",model="qwen3.5-9b"}' in body
     assert "/metrics" not in harness.client.get("/openapi.json").json()["paths"]
+
+
+# ---------- phase 3: hardening
+
+
+def _services(harness: Harness, **overrides: Any) -> Services:
+    return Services(
+        sessions=harness.sessions,
+        queue=harness.queue,
+        llm=cast(AsyncOpenAI, harness.llm),
+        graph=harness.client.app.state.services.graph,
+        valkey_url="redis://unused",
+        settings=Settings(**overrides),
+    )
+
+
+def test_bearer_token_guards_everything_but_health_metrics_and_docs(harness: Harness) -> None:
+    with TestClient(create_app(_services(harness, api_token="s3cret"))) as client:
+        assert client.post("/sessions").status_code == 401
+        assert client.post("/sessions", headers={"Authorization": "Bearer wrong"}).status_code == 401
+        assert client.post("/sessions", headers={"Authorization": "Bearer s3cret"}).status_code == 201
+        assert client.get("/health").status_code == 200
+        assert client.get("/metrics").status_code == 200
+        assert client.get("/openapi.json").status_code == 200
+
+
+def test_security_headers(harness: Harness) -> None:
+    response = harness.client.get("/health")
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["cache-control"] == "no-store"
+
+
+def test_rate_limit_per_session(harness: Harness) -> None:
+    with TestClient(create_app(_services(harness, rate_limit_per_minute=2))) as client:
+        session_id = client.post("/sessions").json()["id"]
+        other = client.post("/sessions").json()["id"]
+        for _ in range(2):
+            harness.llm.queue("extract", facts())
+            harness.llm.queue("respond", "Tell me more.")
+            assert client.post(f"/sessions/{session_id}/messages", json={"message": "hi"}).status_code == 200
+        response = client.post(f"/sessions/{session_id}/messages", json={"message": "hi"})
+        assert response.status_code == 429 and "wait a minute" in response.json()["detail"]
+        harness.llm.queue("extract", facts())
+        harness.llm.queue("respond", "Tell me more.")
+        assert client.post(f"/sessions/{other}/messages", json={"message": "hi"}).status_code == 200
+
+
+def test_export_and_delete_a_session(harness: Harness) -> None:
+    session_id = harness.session()
+    _to_confirmation(harness, session_id)
+    harness.llm.queue("interpret", "The house needs 6469 kWh a year.")
+    harness.stream(f"/sessions/{session_id}/confirm", {"approved": True})
+    export = harness.client.get(f"/sessions/{session_id}/export").json()
+    assert export["session"]["id"] == session_id
+    assert [m["role"] for m in export["messages"]][:2] == ["user", "extract"]
+    assert export["house_briefs"][0]["scenario"] == "baseline" and export["facts"]
+    assert export["workflow_state"]["phase"] == "done"
+    assert harness.client.get(f"/sessions/{uuid.uuid4()}/export").status_code == 404
+
+    response = harness.client.delete(f"/sessions/{session_id}")
+    assert response.status_code == 204
+    assert harness.client.get(f"/sessions/{session_id}").status_code == 404
+    with harness.sessions() as session:
+        assert session.scalars(select(Message).where(Message.session_id == uuid.UUID(session_id))).all() == []
+        assert session.scalars(select(HouseBriefRow)).all() == []
+    assert harness.client.delete(f"/sessions/{session_id}").status_code == 404

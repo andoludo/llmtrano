@@ -8,8 +8,11 @@
   interpretation), ``guardrail`` (when it triggered), ``explanation``, then ``brief``, ``questions``,
   ``phase``.
 - ``GET /sessions/{id}``: the state for a reload. ``POST /feedback``: thumbs up or down on a message.
+- ``GET /sessions/{id}/export``: everything stored about a session (phase 3). ``DELETE /sessions/{id}``:
+  erases it, its runs, its checkpoints, and asks the worker to remove its result files.
 
-One lock per session: two requests of the same session never run the graph at the same time.
+One lock per session: two requests of the same session never run the graph at the same time, and a token
+bucket per session limits the turns per minute (``RATE_LIMIT_PER_MINUTE``).
 """
 
 import asyncio
@@ -19,15 +22,17 @@ from collections import defaultdict
 from collections.abc import AsyncIterator
 from typing import Annotated, Any, Literal, Protocol, Self
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.sse import EventSourceResponse, ServerSentEvent
 from langgraph.types import Command
 from pydantic import BaseModel, Field, model_validator
+from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from llmtrano.brief.card import build_card
-from llmtrano.db.models import Feedback, Message
+from llmtrano.db.models import FactRow, Feedback, HouseBriefRow, KpiRow, Message, Run
 from llmtrano.db.models import Session as SessionRow
+from llmtrano.jobs.retention import erase_session
 from llmtrano.workflow.state import Answer, Phase, WorkflowState
 
 log = logging.getLogger(__name__)
@@ -125,7 +130,19 @@ async def waiting_session(
     return session_id
 
 
+async def within_limit(
+    session_id: Annotated[uuid.UUID, Depends(existing_session)], request: Request
+) -> uuid.UUID:
+    """Dependency: 429 when the session's token bucket is empty."""
+    if not request.app.state.limiter.allow(str(session_id)):
+        raise HTTPException(
+            status.HTTP_429_TOO_MANY_REQUESTS, "too many turns for this session; wait a minute"
+        )
+    return session_id
+
+
 SessionId = Annotated[uuid.UUID, Depends(existing_session)]
+LimitedSessionId = Annotated[uuid.UUID, Depends(within_limit)]
 WaitingSessionId = Annotated[uuid.UUID, Depends(waiting_session)]
 
 
@@ -193,7 +210,7 @@ async def create_session(request: Request) -> SessionCreated:
 
 
 async def post_message(
-    session_id: SessionId, body: MessageIn, request: Request
+    session_id: LimitedSessionId, body: MessageIn, request: Request
 ) -> AsyncIterator[ServerSentEvent]:
     _, waiting = await _state(_graph(request), session_id)
     if waiting:  # at the confirmation: a message or an answer reopens the intake
@@ -214,6 +231,10 @@ async def post_message(
 async def confirm(
     session_id: WaitingSessionId, body: ConfirmIn, request: Request
 ) -> AsyncIterator[ServerSentEvent]:
+    if not request.app.state.limiter.allow(str(session_id)):
+        raise HTTPException(
+            status.HTTP_429_TOO_MANY_REQUESTS, "too many turns for this session; wait a minute"
+        )
     decision = {"approved": True} if body.approved else {"approved": False, "edits": body.edits}
     async for event in _run(request, session_id, Command(resume=decision)):
         yield event
@@ -251,7 +272,79 @@ async def post_feedback(body: FeedbackIn, request: Request) -> dict[str, str]:
     return {"status": "ok"}
 
 
+def _rows(session: Session, model: type[Any], session_id: uuid.UUID) -> list[dict[str, Any]]:
+    rows = session.scalars(select(model).where(model.session_id == session_id).order_by(model.created_at))
+    return [{c.name: _plain(getattr(row, c.name)) for c in model.__table__.columns} for row in rows]
+
+
+def _plain(value: Any) -> Any:
+    if isinstance(value, uuid.UUID):
+        return str(value)
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
+    if hasattr(value, "value"):
+        return value.value
+    return value
+
+
+async def export_session(session_id: SessionId, request: Request) -> dict[str, Any]:
+    """Everything stored about the session, for the user who asks for their data."""
+
+    def load() -> dict[str, Any]:
+        with _sessions(request)() as session:
+            row = session.get_one(SessionRow, session_id)
+            runs = _rows(session, Run, session_id)
+            run_ids = [uuid.UUID(run["id"]) for run in runs]
+            kpis = (
+                [
+                    {"run_id": str(k.run_id), "values": k.values}
+                    for k in session.scalars(select(KpiRow).where(KpiRow.run_id.in_(run_ids)))
+                ]
+                if run_ids
+                else []
+            )
+            message_ids = [uuid.UUID(m["id"]) for m in _rows(session, Message, session_id)]
+            feedback = (
+                [
+                    {"message_id": str(f.message_id), "thumbs": f.thumbs, "comment": f.comment}
+                    for f in session.scalars(select(Feedback).where(Feedback.message_id.in_(message_ids)))
+                ]
+                if message_ids
+                else []
+            )
+            return {
+                "session": {"id": str(row.id), "created_at": row.created_at.isoformat()},
+                "messages": _rows(session, Message, session_id),
+                "facts": _rows(session, FactRow, session_id),
+                "house_briefs": _rows(session, HouseBriefRow, session_id),
+                "runs": runs,
+                "kpis": kpis,
+                "feedback": feedback,
+            }
+
+    export = await asyncio.to_thread(load)
+    state, _ = await _state(_graph(request), session_id)
+    export["workflow_state"] = state.model_dump(mode="json") if state else None
+    return export
+
+
+async def delete_session(session_id: SessionId, request: Request) -> Response:
+    """Erase the session: rows, checkpoints, and the worker removes the result files (right to erasure)."""
+    services = request.app.state.services
+    run_ids = await asyncio.to_thread(erase_session, _sessions(request), session_id)
+    checkpointer = services.checkpointer
+    if checkpointer is not None and hasattr(checkpointer, "adelete_thread"):
+        await checkpointer.adelete_thread(str(session_id))
+    if run_ids:
+        await services.queue.enqueue_job("retention_sweep", _job_id=f"erase-{session_id}")
+    request.app.state.limiter.forget(str(session_id))
+    log.info("session deleted session=%s runs=%d", session_id, len(run_ids))
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 router.add_api_route("/sessions", create_session, methods=["POST"], status_code=status.HTTP_201_CREATED)
+router.add_api_route("/sessions/{session_id}/export", export_session, methods=["GET"])
+router.add_api_route("/sessions/{session_id}", delete_session, methods=["DELETE"], status_code=204)
 router.add_api_route(
     "/sessions/{session_id}/messages", post_message, methods=["POST"], response_class=EventSourceResponse
 )

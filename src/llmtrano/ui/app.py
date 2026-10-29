@@ -91,9 +91,12 @@ def parse_sse(lines: Iterable[str]) -> Iterator[SseEvent]:
 class ApiClient:
     """The ui's only way out: HTTP calls to the api."""
 
-    def __init__(self, base_url: str, transport: httpx.BaseTransport | None = None) -> None:
+    def __init__(
+        self, base_url: str, transport: httpx.BaseTransport | None = None, token: str | None = None
+    ) -> None:
+        headers = {"Authorization": f"Bearer {token}"} if token else {}
         self.http = httpx.Client(
-            base_url=base_url, timeout=httpx.Timeout(30.0, read=1800.0), transport=transport
+            base_url=base_url, timeout=httpx.Timeout(30.0, read=1800.0), transport=transport, headers=headers
         )
 
     def models(self) -> list[str]:
@@ -475,7 +478,8 @@ def main() -> None:
     configure_logging()
     settings = Settings()
     log.info("ui start api_url=%s", settings.api_url)
-    build_ui(ApiClient(settings.api_url), settings).launch(server_name="0.0.0.0", server_port=7860)
+    api = ApiClient(settings.api_url, token=settings.api_token)
+    build_ui(api, settings).launch(server_name="0.0.0.0", server_port=7860)
 
 
 if __name__ == "__main__":
