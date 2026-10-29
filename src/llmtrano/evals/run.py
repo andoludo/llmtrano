@@ -3,6 +3,7 @@
     uv run python -m llmtrano.evals.run                       # default model, every case, with simulations
     uv run python -m llmtrano.evals.run --model qwen3.6-35b-a3b
     uv run python -m llmtrano.evals.run --only tutorial_house --no-simulate
+    uv run python -m llmtrano.evals.run --gate                 # exit 1 when evals/gate.yaml fails
 
 Needs the stack (``docker compose --profile gpu up -d``). Each case gets its own session: the opening (and its
 follow-ups) is sent, then the scripted user answers the planner's questions by field until the Brief is ready
@@ -33,6 +34,7 @@ from llmtrano.brief.model import Fact, HouseBrief, Provenance, Scenario, Source
 from llmtrano.compiler.compile import CompiledModel, trano_schema_hash
 from llmtrano.data import tutorial_house_yaml
 from llmtrano.evals.cases import MAX_TURNS, EvalCase, load_cases
+from llmtrano.evals.gate import DEFAULT_GATE, check_gate, gate_markdown, load_gate
 from llmtrano.evals.metrics import CaseResult, FieldCheck, ReferenceCheck, markdown, matches, summarize
 from llmtrano.llm.calls import CallStats
 from llmtrano.logs import configure_logging
@@ -244,6 +246,13 @@ async def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--output", type=Path, default=Path("evals/results"))
     parser.add_argument("--only", nargs="*", help="case ids to run")
     parser.add_argument("--no-simulate", action="store_true", help="stop at the confirmation")
+    parser.add_argument(
+        "--gate",
+        nargs="?",
+        const=DEFAULT_GATE,
+        type=Path,
+        help="check the summary against the gate thresholds (default evals/gate.yaml); exit 1 when it fails",
+    )
     args = parser.parse_args(argv)
     configure_logging()
     settings = Settings()
@@ -303,9 +312,14 @@ async def main(argv: list[str] | None = None) -> int:
         text += "\n## Gate: tutorial house through the chat vs first_model.yaml\n\n" + "\n".join(
             f"- {key}: {value}" for key, value in comparison.items()
         )
+    status = 0
+    if args.gate is not None:
+        gate_result = check_gate(summary, load_gate(args.gate))
+        text += "\n" + gate_markdown(gate_result)
+        status = 0 if gate_result.passed else 1
     (args.output / f"{name}.md").write_text(text)
     sys.stdout.write(text)
-    return 0
+    return status
 
 
 def gate_comparison(gate: CaseResult | None, reference: dict[str, Any] | None) -> dict[str, Any] | None:
