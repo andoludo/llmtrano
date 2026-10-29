@@ -59,6 +59,7 @@ class EvalCase(BaseModel):
     gate: bool = False
     note: str | None = None
     reference: Reference | None = None
+    generated: bool = False  # written by ``llmtrano.evals.generate`` (phase 3)
 
     @field_validator("answers", "expected", "renovation")
     @classmethod

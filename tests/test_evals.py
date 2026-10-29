@@ -24,7 +24,7 @@ CASES = Path(__file__).parents[1] / "evals" / "cases"
 
 
 def test_the_eval_set_has_the_planned_cases() -> None:
-    cases = {case.id: case for case in load_cases(CASES)}
+    cases = {case.id: case for case in load_cases(CASES) if not case.generated}
     assert set(cases) == {
         # phase 1
         "tutorial_house",
